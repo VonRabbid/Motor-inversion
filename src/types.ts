@@ -3,127 +3,10 @@
  * Cumple con SPEC.md para la arquitectura de funciones puras en src/motor/
  */
 
-// ============================================================================
-// 1. Catálogo de Productos y Emisores (catalogo.json)
-// ============================================================================
-
-export type TipoProducto =
-  | 'mutual_fund'
-  | 'investment_fund'
-  | 'time_deposit'
-  | 'cash'
-  | 'equity_etf'
-  | 'insurance_savings'
-  | 'other';
-
-export type TipoEmisor = 'agf' | 'aseguradora' | 'banco' | string;
-
-export interface CurvaCostoPermanencia {
-  horizonte_anios: number;
-  costo_total_pct_de_aportes: number;
-  multa_rescate_pct: number;
-}
-
-export interface SerieCatalogo {
-  codigo: string;
-  tac_pct: number;
-  minimo_clp: number;
-  requiere_mandato?: boolean; // Por defecto: false
-  solo_apv?: boolean;         // Por defecto: false
-  abierta?: boolean;          // Por defecto: true
-}
-
-export interface ProductoCatalogo {
-  id: string;
-  emisor: string;
-  nombre: string;
-  tipo: TipoProducto;
-  categoria: string;
-  liquidez_dias: number;
-  series: SerieCatalogo[];
-  prima_riesgo_pct_del_aporte?: number;
-  curva_costo_permanencia?: CurvaCostoPermanencia[];
-}
-
-export interface Emisor {
-  id: string;
-  nombre: string;
-  tipo: TipoEmisor;
-}
-
-export interface Catalogo {
-  version: string;
-  corte_costos: string;
-  fuente_costos: string;
-  emisores: Emisor[];
-  productos: ProductoCatalogo[];
-  _aviso?: string;
-  _nota?: string;
-}
+export * from './types/domain';
 
 // ============================================================================
-// 2. Acuerdos de Distribución (acuerdos.json)
-// ============================================================================
-
-export interface AcuerdoEmisor {
-  emisor: string;
-  estado: 'active' | 'inactive' | string;
-  vigente_desde: string;
-  vigente_hasta: string | null;
-  mandato: boolean;
-  patrimonio_agregado_clp: number;
-  patrimonio_al: string;
-  /**
-   * Mapeo: productoId -> codigoSerie -> comision_distribucion_pct anual
-   * Ejemplo: { "alfa-deuda-uf": { "CLASI": 0.80, "B": 0.55, ... } }
-   */
-  series: Record<string, Record<string, number>>;
-}
-
-export interface ProductoSinSerieAcuerdo {
-  comision_distribucion_pct: number;
-}
-
-export interface AcuerdosDistribucion {
-  distribuidor: string;
-  acuerdos: AcuerdoEmisor[];
-  productos_sin_serie: Record<string, ProductoSinSerieAcuerdo>;
-  _aviso?: string;
-  _nota?: string;
-}
-
-// ============================================================================
-// 3. Cartola del Cliente (cartola.json)
-// ============================================================================
-
-export type PerfilRiesgo = 'conservador' | 'moderado' | 'agresivo' | string;
-
-export interface Cliente {
-  referencia: string;
-  perfil_riesgo: PerfilRiesgo;
-  perfil_evaluado_el: string;
-  plan_apv: boolean;
-}
-
-export interface PosicionCartola {
-  producto: string | null;
-  descripcion_original?: string;
-  serie: string | null;
-  cuotas: number | null;
-  valor_cuota: number | null;
-  monto_clp: number;
-}
-
-export interface Cartola {
-  cliente: Cliente;
-  corte: string;
-  moneda: string;
-  posiciones: PosicionCartola[];
-  _aviso?: string;
-}
-
-// ============================================================================
-// 4. Meta Financiera (meta.json)
+// Meta Financiera (meta.json)
 // ============================================================================
 
 export interface Desembolso {
@@ -143,7 +26,7 @@ export interface MetaFinanciera {
 }
 
 // ============================================================================
-// 5. Supuestos de Mercado y Optimización (supuestos.json)
+// Supuestos de Mercado y Optimización (supuestos.json)
 // ============================================================================
 
 export interface SupuestoUF {
@@ -189,13 +72,9 @@ export interface Supuestos {
 }
 
 // ============================================================================
-// 6. Modelos de Salida Nivel 1 (Diagnóstico y Optimización de Series)
+// Modelos adicionales de Nivel 1
 // ============================================================================
 
-/**
- * Representa una posición de la cartola una vez normalizada y contrastada
- * con el catálogo y los acuerdos de distribución.
- */
 export interface PosicionNormalizada {
   id: string;
   producto_id: string | null;
@@ -203,7 +82,7 @@ export interface PosicionNormalizada {
   descripcion_original?: string;
   emisor_id: string | null;
   emisor_nombre: string | null;
-  tipo_producto: TipoProducto | 'desconocido';
+  tipo_producto: string;
   categoria: string | null;
   liquidez_dias: number | null;
   serie_actual: string | null;
@@ -219,30 +98,6 @@ export interface PosicionNormalizada {
   advertencias: string[];
 }
 
-/**
- * Evaluación de elegibilidad de una serie alternativa para un fondo determinado.
- */
-export interface EvaluacionSerie {
-  serie: string;
-  tac_pct: number;
-  minimo_clp: number;
-  abierta: boolean;
-  solo_apv: boolean;
-  requiere_mandato: boolean;
-  comision_distribucion_pct: number | null;
-  cumple_minimo: boolean;
-  cumple_apv: boolean;
-  cumple_mandato: boolean;
-  cumple_abierta: boolean;
-  cumple_acuerdo: boolean;
-  es_elegible: boolean;
-  motivos_no_elegible: string[];
-}
-
-/**
- * Análisis de optimización de serie para una posición específica,
- * comparando la serie actual con la serie óptima elegible de menor costo.
- */
 export interface AhorroPosicion {
   posicion_id: string;
   producto_id: string;
@@ -256,10 +111,9 @@ export interface AhorroPosicion {
   tac_propuesta_pct: number;
   costo_propuesto_anual_clp: number;
   comision_distribucion_propuesta_pct: number | null;
-  ahorro_anual_pp: number; // Reducción en puntos porcentuales de TAC
-  ahorro_anual_clp: number; // Ahorro monetario anual
+  ahorro_anual_pp: number;
+  ahorro_anual_clp: number;
   es_cambio_recomendado: boolean;
-  series_evaluadas: EvaluacionSerie[];
 }
 
 export type TipoAlertaDiagnostico =
@@ -277,30 +131,6 @@ export interface AlertaDiagnostico {
   detalle?: Record<string, unknown>;
 }
 
-/**
- * Estructura completa de salida para el Nivel 1 (Diagnóstico de Cartera Actual
- * y Ahorro Inmediato por Optimización de Series).
- */
-export interface ResultadoDiagnostico {
-  cliente: Cliente;
-  corte: string;
-  patrimonio_total_clp: number;
-  posiciones: PosicionNormalizada[];
-  optimizacion_series: AhorroPosicion[];
-  costo_actual_total_clp: number;
-  costo_actual_ponderado_pct: number;
-  costo_optimizado_total_clp: number;
-  costo_optimizado_ponderado_pct: number;
-  ahorro_total_clp: number;
-  ahorro_total_pp: number;
-  perfil_vigente: boolean;
-  dias_desde_evaluacion_perfil: number;
-  alertas: AlertaDiagnostico[];
-}
-
-/**
- * Opciones de configuración para el motor de cálculo.
- */
 export interface OpcionesMotor {
   mostrarComisionDistribuidor: boolean;
 }
