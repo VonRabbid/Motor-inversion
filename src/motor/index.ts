@@ -1,27 +1,38 @@
 import type { Cartola, Catalogo, Acuerdos, DiagnosticoCartola } from '../types/domain';
+import { calcularDiagnostico } from './diagnostico';
+import { calcularPropuestaSeries } from './propuestaSeries';
 
-// Orquestador de diagnostico y propuestas de Nivel 1
+export * from './evaluadorSeries';
+export * from './diagnostico';
+export * from './propuestaSeries';
+
+// Orquestador de diagnostico y propuestas de optimizacion de series (Nivel 1)
 export function ejecutarNivel1(
   cartola: Cartola,
   catalogo: Catalogo,
   acuerdos: Acuerdos
 ): DiagnosticoCartola {
-  // Stub temporal para compilacion inicial en fase roja de TDD
-  void cartola;
-  void catalogo;
-  void acuerdos;
+  // R02: calculo de costos, ponderaciones y evaluacion de series por posicion
+  const diag = calcularDiagnostico(cartola, catalogo, acuerdos);
+
+  // R05: determinacion de mejor serie elegible y cuantificacion de ahorros
+  const propuesta = calcularPropuestaSeries(
+    diag.posiciones,
+    diag.total_identificado_clp,
+    diag.costo_actual_anual_clp
+  );
 
   return {
-    total_cartera_clp: 0,
-    total_identificado_clp: 0,
-    total_no_identificado_clp: 0,
-    pct_no_identificado: 0,
-    costo_actual_anual_clp: 0,
-    tac_actual_ponderada_pct: 0,
-    ahorro_elegible_anual_clp: 0,
-    tac_nueva_elegible_ponderada_pct: 0,
-    ahorro_condicional_adicional_clp: 0,
-    posiciones: [],
-    alertas: []
+    total_cartera_clp: diag.total_cartera_clp,
+    total_identificado_clp: diag.total_identificado_clp,
+    total_no_identificado_clp: diag.total_no_identificado_clp,
+    pct_no_identificado: diag.pct_no_identificado,
+    costo_actual_anual_clp: diag.costo_actual_anual_clp,
+    tac_actual_ponderada_pct: diag.tac_actual_ponderada_pct,
+    ahorro_elegible_anual_clp: propuesta.ahorroElegibleTotalClp,
+    tac_nueva_elegible_ponderada_pct: propuesta.nuevaTacPonderadaPct,
+    ahorro_condicional_adicional_clp: propuesta.ahorroCondicionalTotalClp,
+    posiciones: propuesta.posicionesOptimizadas,
+    alertas: diag.alertas
   };
 }
