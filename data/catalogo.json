@@ -1,0 +1,166 @@
+{
+  "_aviso": "Dato de ejemplo. Administradoras, fondos, series y costos ficticios.",
+  "_nota": "En cada serie, los campos omitidos valen: abierta = true, solo_apv = false, requiere_mandato = false. La TAC es anual, en porcentaje.",
+  "version": "ejemplo-2026-10",
+  "corte_costos": "2026-09-30",
+  "fuente_costos": "Dato de ejemplo",
+  "emisores": [
+    { "id": "alfa", "nombre": "AGF Alfa", "tipo": "agf" },
+    { "id": "beta", "nombre": "AGF Beta", "tipo": "agf" },
+    { "id": "gamma", "nombre": "AGF Gamma", "tipo": "agf" },
+    { "id": "delta", "nombre": "AGF Delta", "tipo": "agf" },
+    { "id": "epsilon", "nombre": "Seguros Épsilon", "tipo": "aseguradora" },
+    { "id": "banco-ejemplo", "nombre": "Banco Ejemplo", "tipo": "banco" }
+  ],
+  "productos": [
+    {
+      "id": "alfa-deuda-uf",
+      "emisor": "alfa",
+      "nombre": "Alfa Deuda UF Mediano Plazo",
+      "tipo": "mutual_fund",
+      "categoria": "deuda_uf_mediano",
+      "liquidez_dias": 2,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 2.10, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 1.45, "minimo_clp": 5000000 },
+        { "codigo": "F", "tac_pct": 0.95, "minimo_clp": 100000000 },
+        { "codigo": "M", "tac_pct": 1.00, "minimo_clp": 0, "requiere_mandato": true },
+        { "codigo": "APV", "tac_pct": 0.80, "minimo_clp": 0, "solo_apv": true }
+      ]
+    },
+    {
+      "id": "alfa-rv-global",
+      "emisor": "alfa",
+      "nombre": "Alfa Renta Variable Global",
+      "tipo": "mutual_fund",
+      "categoria": "rv_global",
+      "liquidez_dias": 4,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 3.20, "minimo_clp": 0 },
+        { "codigo": "A", "tac_pct": 2.60, "minimo_clp": 0, "abierta": false },
+        { "codigo": "B", "tac_pct": 2.30, "minimo_clp": 5000000 },
+        { "codigo": "F", "tac_pct": 1.60, "minimo_clp": 150000000 },
+        { "codigo": "APV", "tac_pct": 1.40, "minimo_clp": 0, "solo_apv": true }
+      ]
+    },
+    {
+      "id": "beta-corto-clp",
+      "emisor": "beta",
+      "nombre": "Beta Deuda Corto Plazo Pesos",
+      "tipo": "mutual_fund",
+      "categoria": "deuda_corto_clp",
+      "liquidez_dias": 1,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 1.10, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 0.75, "minimo_clp": 10000000 }
+      ]
+    },
+    {
+      "id": "beta-deuda-uf-corto",
+      "emisor": "beta",
+      "nombre": "Beta Deuda UF Corto Plazo",
+      "tipo": "mutual_fund",
+      "categoria": "deuda_uf_corto",
+      "liquidez_dias": 2,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 1.15, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 0.70, "minimo_clp": 10000000 }
+      ]
+    },
+    {
+      "id": "beta-balanceado",
+      "emisor": "beta",
+      "nombre": "Beta Balanceado Moderado",
+      "tipo": "mutual_fund",
+      "categoria": "balanceado",
+      "liquidez_dias": 3,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 2.80, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 1.95, "minimo_clp": 20000000 },
+        { "codigo": "M", "tac_pct": 1.30, "minimo_clp": 0, "requiere_mandato": true },
+        { "codigo": "APV", "tac_pct": 1.50, "minimo_clp": 0, "solo_apv": true }
+      ]
+    },
+    {
+      "id": "gamma-rv-chile",
+      "emisor": "gamma",
+      "nombre": "Gamma Renta Variable Chile",
+      "tipo": "mutual_fund",
+      "categoria": "rv_chile",
+      "liquidez_dias": 3,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 3.00, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 2.10, "minimo_clp": 5000000 }
+      ]
+    },
+    {
+      "id": "gamma-deuda-uf-largo",
+      "emisor": "gamma",
+      "nombre": "Gamma Deuda UF Largo Plazo",
+      "tipo": "mutual_fund",
+      "categoria": "deuda_uf_largo",
+      "liquidez_dias": 3,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 1.90, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 1.20, "minimo_clp": 30000000 }
+      ]
+    },
+    {
+      "id": "delta-deuda-corp",
+      "emisor": "delta",
+      "nombre": "Delta Deuda Corporativa UF",
+      "tipo": "mutual_fund",
+      "categoria": "deuda_uf_mediano",
+      "liquidez_dias": 3,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 1.70, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 1.05, "minimo_clp": 10000000 }
+      ]
+    },
+    {
+      "id": "delta-rv-global-idx",
+      "emisor": "delta",
+      "nombre": "Delta Renta Variable Global Indexada",
+      "tipo": "mutual_fund",
+      "categoria": "rv_global",
+      "liquidez_dias": 3,
+      "series": [
+        { "codigo": "CLASI", "tac_pct": 1.35, "minimo_clp": 0 },
+        { "codigo": "B", "tac_pct": 0.60, "minimo_clp": 10000000 }
+      ]
+    },
+    {
+      "id": "deposito-uf-90d",
+      "emisor": "banco-ejemplo",
+      "nombre": "Depósito a plazo en UF a 90 días",
+      "tipo": "time_deposit",
+      "categoria": "deposito_plazo",
+      "liquidez_dias": 90,
+      "series": []
+    },
+    {
+      "id": "efectivo-clp",
+      "emisor": "banco-ejemplo",
+      "nombre": "Efectivo en pesos",
+      "tipo": "cash",
+      "categoria": "caja",
+      "liquidez_dias": 0,
+      "series": []
+    },
+    {
+      "id": "seguro-epsilon-ahorro",
+      "emisor": "epsilon",
+      "nombre": "Seguro con ahorro Épsilon",
+      "tipo": "insurance_savings",
+      "categoria": "seguro_ahorro",
+      "liquidez_dias": 30,
+      "series": [],
+      "prima_riesgo_pct_del_aporte": 18.0,
+      "curva_costo_permanencia": [
+        { "horizonte_anios": 5, "costo_total_pct_de_aportes": 14.0, "multa_rescate_pct": 8.0 },
+        { "horizonte_anios": 10, "costo_total_pct_de_aportes": 11.0, "multa_rescate_pct": 4.0 },
+        { "horizonte_anios": 20, "costo_total_pct_de_aportes": 9.0, "multa_rescate_pct": 0.0 }
+      ]
+    }
+  ]
+}

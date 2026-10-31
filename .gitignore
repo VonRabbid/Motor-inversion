@@ -1,0 +1,33 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencias y compilación
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Archivos de entorno y temporales
+.env
+.env.*
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Carpetas auxiliares y documentos no públicos
+Archivos JSON/
+*.pdf
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
