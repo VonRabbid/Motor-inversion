@@ -1,8 +1,4 @@
-/**
- * Tipos de dominio para el Motor de Propuestas de Inversión
- * Cumple con SPEC.md y las reglas de negocio de Nivel 1
- */
-
+// Contratos de datos para productos, catalogo y acuerdos comerciales
 export type TipoProducto =
   | 'mutual_fund'
   | 'investment_fund'
@@ -13,7 +9,6 @@ export type TipoProducto =
   | 'other';
 
 export type TipoEmisor = 'agf' | 'aseguradora' | 'banco' | string;
-
 export type PerfilRiesgo = 'conservador' | 'moderado' | 'agresivo' | string;
 
 export type EstadoSerie =
@@ -23,6 +18,7 @@ export type EstadoSerie =
   | 'blocked'
   | 'out_of_scope';
 
+// Estructura de la cartola del cliente
 export interface Cliente {
   referencia: string;
   perfil_riesgo: PerfilRiesgo;
@@ -47,19 +43,14 @@ export interface Cartola {
   _aviso?: string;
 }
 
-export interface CurvaCostoPermanencia {
-  horizonte_anios: number;
-  costo_total_pct_de_aportes: number;
-  multa_rescate_pct: number;
-}
-
+// Catalogo maestro de fondos y condiciones por serie
 export interface SerieCatalogo {
   codigo: string;
   tac_pct: number;
-  minimo_clp: number;
-  requiere_mandato?: boolean;
-  solo_apv?: boolean;
+  minimo_clp?: number;
   abierta?: boolean;
+  solo_apv?: boolean;
+  requiere_mandato?: boolean;
 }
 
 export interface ProductoCatalogo {
@@ -70,76 +61,69 @@ export interface ProductoCatalogo {
   categoria: string;
   liquidez_dias: number;
   series: SerieCatalogo[];
-  prima_riesgo_pct_del_aporte?: number;
-  curva_costo_permanencia?: CurvaCostoPermanencia[];
-}
-
-export interface Emisor {
-  id: string;
-  nombre: string;
-  tipo: TipoEmisor;
 }
 
 export interface Catalogo {
   version: string;
   corte_costos: string;
-  fuente_costos: string;
-  emisores: Emisor[];
+  fuente_costos?: string;
   productos: ProductoCatalogo[];
-  _aviso?: string;
-  _nota?: string;
 }
 
-export interface AcuerdoEmisor {
+// Acuerdos de distribucion vigentes y comisiones
+export interface AcuerdoAGF {
   emisor: string;
-  estado: 'active' | 'inactive' | string;
+  estado: 'active' | 'inactive';
   vigente_desde: string;
   vigente_hasta: string | null;
   mandato: boolean;
   patrimonio_agregado_clp: number;
-  patrimonio_al: string;
   series: Record<string, Record<string, number>>;
-}
-
-export interface ProductoSinSerieAcuerdo {
-  comision_distribucion_pct: number;
 }
 
 export interface Acuerdos {
   distribuidor: string;
-  acuerdos: AcuerdoEmisor[];
-  productos_sin_serie: Record<string, ProductoSinSerieAcuerdo>;
-  _aviso?: string;
-  _nota?: string;
+  acuerdos: AcuerdoAGF[];
 }
 
-export type AcuerdosDistribucion = Acuerdos;
-
+// Estructuras de salida para diagnostico y propuesta
 export interface EvaluacionSerie {
-  serie: string;
+  codigo: string;
   tac_pct: number;
-  minimo_clp: number;
   estado: EstadoSerie;
-  comision_distribucion_pct: number | null;
-  motivo?: string;
+  regla: number;
+  motivo: string;
+  serie?: string;
 }
 
 export interface DiagnosticoPosicion {
-  posicion: PosicionCartola;
-  producto_id: string | null;
-  nombre: string;
-  tipo: TipoProducto | 'desconocido';
-  identificado: boolean;
-  monto_clp: number;
-  peso_pct: number;
-  serie_actual: string | null;
-  tac_actual_pct: number;
-  costo_actual_clp: number;
-  series_evaluadas: EvaluacionSerie[];
-  serie_elegible_optima: EvaluacionSerie | null;
-  ahorro_elegible_clp: number;
-  serie_condicional_optima: EvaluacionSerie | null;
-  ahorro_condicional_adicional_clp: number;
+  idProducto: string;
+  nombreProducto: string;
+  serieActual: string | null;
+  monto: number;
+  pesoPct: number;
+  tacPct: number;
+  costoAnualClp: number;
+  seriesEvaluadas: EvaluacionSerie[];
+  mejorElegible?: {
+    serie: string;
+    tacPct: number;
+    ahorroBps: number;
+    ahorroClp: number;
+  };
+  condicionalAdicional?: {
+    serie: string;
+    tacPct: number;
+    ahorroClpAdicional: number;
+    condicion: string;
+  };
+  producto_id?: string;
+  nombre?: string;
+  monto_clp?: number;
+  peso_pct?: number;
+  tac_actual_pct?: number;
+  costo_actual_clp?: number;
+  series_evaluadas?: EvaluacionSerie[];
 }
 
 export interface DiagnosticoCartola {
