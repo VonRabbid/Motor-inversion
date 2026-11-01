@@ -23,32 +23,6 @@ El proyecto sigue una arquitectura desacoplada y orientada a funciones puras:
 - **`public/data/`**: Datos públicos servidos directamente al cliente para la versión web.
 - **`tests/`**: Suite de pruebas unitarias automatizadas con Vitest.
 
-## Instalación y Ejecución
-
-### Instalación de dependencias
-
-```bash
-npm install
-```
-
-### Ejecutar entorno de desarrollo
-
-```bash
-npm run dev
-```
-
-### Ejecutar pruebas unitarias
-
-```bash
-npm test
-```
-
-### Compilar para producción
-
-```bash
-npm run build
-```
-
 ## Especificación Técnica
 
-Consulte [`SPEC.md`](./SPEC.md) para conocer las decisiones de diseño detalladas y las reglas de negocio implementadas en el motor.
+Consultar SPEC.md para conocer las decisiones de diseño detalladas y las reglas de negocio implementadas en el motor.
