@@ -10,28 +10,30 @@ const catalogo = catalogoData as unknown as Catalogo;
 const acuerdos = acuerdosData as unknown as Acuerdos;
 let cartolaActiva: Cartola = cartolaData as unknown as Cartola;
 
-// Montaje de la estructura general y barra de herramientas en el DOM
+// Montaje de la barra superior y contenedor principal en el DOM
 function montarAplicacion(): void {
   const app = document.querySelector<HTMLDivElement>('#app');
   if (!app) return;
 
   app.innerHTML = `
-    <main class="container">
-      <header class="app-header">
-        <div class="app-title">
+    <header class="top-navbar no-print">
+      <div class="navbar-inner">
+        <div class="navbar-title">
           <h1>Motor de Propuestas de Inversión</h1>
-          <p>Diagnóstico de cartera actual y optimización de series (Nivel 1)</p>
+          <span class="navbar-subtitle">Nivel 1 · Diagnóstico y cambio de serie</span>
         </div>
-        <div class="controls-group no-print">
-          <button id="btn-reset" class="btn" title="Restaurar datos de prueba">Restaurar Ejemplo</button>
+        <div class="controls-group">
+          <button id="btn-reset" class="btn">Restaurar ejemplo</button>
           <div class="file-input-wrapper">
-            <button class="btn">Subir Cartola JSON</button>
+            <button class="btn">Subir cartola</button>
             <input type="file" id="input-cartola" accept=".json" />
           </div>
-          <button id="btn-print" class="btn btn-primary">Imprimir / PDF</button>
+          <button id="btn-print" class="btn btn-dark">Imprimir PDF</button>
         </div>
-      </header>
+      </div>
+    </header>
 
+    <main class="container">
       <section id="vista-contenido"></section>
     </main>
   `;
@@ -72,13 +74,13 @@ function montarAplicacion(): void {
   actualizarVista();
 }
 
-// Ejecuta el motor matematico y renderiza la vista correspondiente
+// Ejecuta el motor matematico y renderiza la vista correspondiente con metadatos de cartola
 function actualizarVista(): void {
   const contenedor = document.querySelector<HTMLElement>('#vista-contenido');
   if (!contenedor) return;
 
   const diag = ejecutarNivel1(cartolaActiva, catalogo, acuerdos);
-  renderNivel1(contenedor, diag);
+  renderNivel1(contenedor, diag, cartolaActiva);
 }
 
 // Inicializar la aplicacion al cargar el documento
