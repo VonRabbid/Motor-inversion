@@ -1,0 +1,63 @@
+name: Despliegue continuo a GitHub Pages
+
+# Disparar en cada push a main y permitir ejecucion manual
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Permisos requeridos para publicar en GitHub Pages de forma segura
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Cancelar despliegues previos si entra un commit nuevo
+concurrency:
+  group: 'pages'
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # Descarga del codigo fuente
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      # Configuracion del entorno Node.js
+      - name: Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # Instalacion determinista de dependencias
+      - name: Instalar dependencias
+        run: npm ci
+
+      # Verificacion de calidad: todos los tests deben estar en verde
+      - name: Ejecutar suite de pruebas unitarias Vitest
+        run: npx vitest run
+
+      # Generacion de artefactos estaticos de produccion en dist/
+      - name: Compilar aplicacion
+        run: npm run build
+
+      # Preparacion y subida del artefacto a GitHub Pages
+      - name: Configurar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Subir artefacto de compilacion
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      # Despliegue final en la infraestructura de Pages
+      - name: Desplegar sitio
+        id: deployment
+        uses: actions/deploy-pages@v4
