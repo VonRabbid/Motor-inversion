@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import metaData from '../data/meta.json';
 import supuestosData from '../data/supuestos.json';
 import type { MetaFinanciera, Supuestos } from '../src/types/domain';
-import { calcularPlanMeta, calcularTiempo, asignarTramo } from '../src/motor/metas';
+import { calcularPlanMeta, calcularTiempo, asignarTramo, proyectarEscenariosMeta } from '../src/motor/metas';
 
 const meta = metaData as unknown as MetaFinanciera;
 const supuestos = supuestosData as unknown as Supuestos;
@@ -42,5 +42,21 @@ describe('Nivel 2 — Calce de Plazos y Valor Presente de Metas (R06)', () => {
     expect(res.totalVpUf).toBeLessThanOrEqual(1682);
     expect(res.alcanza).toBe(true);
     expect(res.estadoBalance).toBe('superavit');
+  });
+
+  it('Test 5: Proyección en escenarios Base, Adverso (-1,5 pp) y Favorable (+1,5 pp)', () => {
+    const proy = proyectarEscenariosMeta(meta, supuestos, '2026-09-30');
+
+    expect(proy.escenarios['base']).toBeDefined();
+    expect(proy.escenarios['adverso']).toBeDefined();
+    expect(proy.escenarios['favorable']).toBeDefined();
+
+    // Mayor rentabilidad reduce el valor presente necesario para fondear la meta
+    expect(proy.escenarios['favorable'].totalVpUf).toBeLessThan(proy.escenarios['base'].totalVpUf);
+    expect(proy.escenarios['base'].totalVpUf).toBeLessThan(proy.escenarios['adverso'].totalVpUf);
+
+    // En escenario adverso la meta queda deficitaria frente a las 1.750 UF disponibles
+    expect(proy.escenarios['adverso'].alcanza).toBe(false);
+    expect(proy.escenarios['adverso'].estadoBalance).toBe('deficit');
   });
 });

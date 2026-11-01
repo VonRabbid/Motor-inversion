@@ -225,3 +225,20 @@ export interface ResultadoCalculoMetas {
   desembolsos: DesembolsoCalculado[];
   resumenTramos: ResumenTramoMeta[];
 }
+
+export interface DetalleEscenarioMeta {
+  clave: string;
+  nombre: string;
+  ajustePp: number;
+  totalVpUf: number;
+  totalVpClp: number;
+  diferenciaUf: number;
+  diferenciaClp: number;
+  alcanza: boolean;
+  estadoBalance: 'superavit' | 'deficit' | 'justo';
+}
+
+export interface ProyeccionMetasEscenarios {
+  resultadoBase: ResultadoCalculoMetas;
+  escenarios: Record<string, DetalleEscenarioMeta>;
+}

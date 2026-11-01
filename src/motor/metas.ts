@@ -3,7 +3,9 @@ import type {
   Supuestos,
   ResultadoCalculoMetas,
   DesembolsoCalculado,
-  ResumenTramoMeta
+  ResumenTramoMeta,
+  ProyeccionMetasEscenarios,
+  DetalleEscenarioMeta
 } from '../types/domain';
 
 // Calcula la distancia exacta en anios y meses entre dos fechas
@@ -152,5 +154,88 @@ export function calcularPlanMeta(
     estadoBalance,
     desembolsos: desembolsosCalculados,
     resumenTramos: Array.from(tramosMap.values()).filter((t) => t.cantidadDesembolsos > 0)
+  };
+}
+
+// R03 y R06: proyecta la suficiencia del capital en escenarios Base, Adverso y Favorable
+export function proyectarEscenariosMeta(
+  meta: MetaFinanciera,
+  supuestos: Supuestos,
+  fechaCorte = '2026-09-30'
+): ProyeccionMetasEscenarios {
+  const resultadoBase = calcularPlanMeta(meta, supuestos, fechaCorte);
+  const valorUf = supuestos.valor_uf_clp ?? (supuestos as any).uf?.valor_clp ?? (meta as any).valor_uf_clp ?? 40000;
+  const capitalAsignadoUf = resultadoBase.capitalAsignadoUf;
+
+  let listaEscenarios: Array<{ clave: string; nombre: string; ajuste_retorno_pp: number }> = [];
+
+  if (Array.isArray(supuestos.escenarios)) {
+    listaEscenarios = supuestos.escenarios.map((e: any) => ({
+      clave: e.id ?? 'base',
+      nombre: e.nombre ?? (e.id ? e.id.charAt(0).toUpperCase() + e.id.slice(1) : 'Base'),
+      ajuste_retorno_pp: e.ajuste_retorno_pp ?? 0
+    }));
+  } else if (supuestos.escenarios && typeof supuestos.escenarios === 'object') {
+    listaEscenarios = Object.entries(supuestos.escenarios).map(([k, v]: [string, any]) => ({
+      clave: k,
+      nombre: v.nombre ?? (k.charAt(0).toUpperCase() + k.slice(1)),
+      ajuste_retorno_pp: v.ajuste_retorno_pp ?? 0
+    }));
+  } else {
+    listaEscenarios = [
+      { clave: 'base', nombre: 'Base', ajuste_retorno_pp: 0 },
+      { clave: 'adverso', nombre: 'Adverso', ajuste_retorno_pp: -1.5 },
+      { clave: 'favorable', nombre: 'Favorable', ajuste_retorno_pp: 1.5 }
+    ];
+  }
+
+  const escenarios: Record<string, DetalleEscenarioMeta> = {};
+
+  for (const esc of listaEscenarios) {
+    const ajuste = esc.ajuste_retorno_pp;
+    let totalVpUf = 0;
+
+    for (const d of meta.desembolsos) {
+      const { anios, meses } = calcularTiempo(fechaCorte, d.fecha);
+      const tramo = asignarTramo(meses, supuestos);
+      const cats = tramo.categorias_permitidas ?? tramo.categorias ?? [];
+      const tasaBaseTramo = obtenerRetornoTramoPct(cats, supuestos);
+
+      // Ajuste de tasa real anual segun el escenario analizado
+      const tasaAjustada = Math.max(0, tasaBaseTramo + ajuste);
+      const factorDescuento = Math.pow(1 + tasaAjustada / 100, anios);
+      const montoUf = d.monto_uf ?? d.uf ?? 0;
+      const vpUf = Number((montoUf / factorDescuento).toFixed(2));
+      totalVpUf += vpUf;
+    }
+
+    totalVpUf = Number(totalVpUf.toFixed(2));
+    const totalVpClp = Math.round(totalVpUf * valorUf);
+    const diferenciaUf = Number((capitalAsignadoUf - totalVpUf).toFixed(2));
+    const diferenciaClp = Math.round(diferenciaUf * valorUf);
+
+    let estadoBalance: 'superavit' | 'deficit' | 'justo' = 'justo';
+    if (diferenciaUf > 1) {
+      estadoBalance = 'superavit';
+    } else if (diferenciaUf < -1) {
+      estadoBalance = 'deficit';
+    }
+
+    escenarios[esc.clave] = {
+      clave: esc.clave,
+      nombre: esc.nombre,
+      ajustePp: ajuste,
+      totalVpUf,
+      totalVpClp,
+      diferenciaUf,
+      diferenciaClp,
+      alcanza: capitalAsignadoUf >= totalVpUf,
+      estadoBalance
+    };
+  }
+
+  return {
+    resultadoBase,
+    escenarios
   };
 }
