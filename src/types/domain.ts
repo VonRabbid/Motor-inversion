@@ -139,3 +139,89 @@ export interface DiagnosticoCartola {
   posiciones: DiagnosticoPosicion[];
   alertas: string[];
 }
+
+// --- Dominio Nivel 2: Metas Financieras y Supuestos de Inversion (R06) ---
+
+export interface DesembolsoMeta {
+  fecha: string;
+  monto_uf?: number;
+  uf?: number;
+}
+
+export interface MetaFinanciera {
+  nombre: string;
+  capital_asignado_clp: number;
+  moneda?: string;
+  desembolsos: DesembolsoMeta[];
+}
+
+export interface TramoSupuesto {
+  id: string;
+  nombre?: string;
+  desde_meses: number;
+  hasta_meses: number | null;
+  categorias_permitidas?: string[];
+  categorias?: string[];
+}
+
+export interface CategoriaSupuesto {
+  retorno_real_pct?: number;
+  retorno_real_bruto_pct?: number;
+  volatilidad_pct: number;
+}
+
+export interface EscenarioSupuesto {
+  id?: string;
+  nombre?: string;
+  ajuste_retorno_pp: number;
+  probabilidad_pct?: number;
+}
+
+export interface Supuestos {
+  valor_uf_clp?: number;
+  uf?: { valor_clp: number; fecha?: string };
+  tramos: TramoSupuesto[];
+  categorias: Record<string, CategoriaSupuesto>;
+  escenarios?: Record<string, EscenarioSupuesto> | EscenarioSupuesto[];
+}
+
+export interface DesembolsoCalculado {
+  fecha: string;
+  montoUf: number;
+  montoClp: number;
+  mesesDesdeCorte: number;
+  aniosDesdeCorte: number;
+  tramoId: string;
+  tramoNombre: string;
+  retornoRealAplicadoPct: number;
+  valorPresenteUf: number;
+  valorPresenteClp: number;
+}
+
+export interface ResumenTramoMeta {
+  tramoId: string;
+  nombre: string;
+  cantidadDesembolsos: number;
+  totalDesembolsosUf: number;
+  totalVpUf: number;
+  totalVpClp: number;
+  categoriasPermitidas: string[];
+}
+
+export interface ResultadoCalculoMetas {
+  nombreMeta: string;
+  fechaCorte: string;
+  valorUfClp: number;
+  capitalAsignadoClp: number;
+  capitalAsignadoUf: number;
+  totalDesembolsosUf: number;
+  totalDesembolsosClp: number;
+  totalVpUf: number;
+  totalVpClp: number;
+  diferenciaUf: number;
+  diferenciaClp: number;
+  alcanza: boolean;
+  estadoBalance: 'superavit' | 'deficit' | 'justo';
+  desembolsos: DesembolsoCalculado[];
+  resumenTramos: ResumenTramoMeta[];
+}
