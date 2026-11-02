@@ -28,8 +28,14 @@ export function buscarMejorAlternativaCategoria(
     const agf = p.administradora ?? p.emisor;
     const catMatches = p.categoria === categoria || p.categoria.startsWith(categoria) || categoria.startsWith(p.categoria);
     if (!catMatches) return false;
-
-    const acuerdo = listaAcuerdos.find((a: any) => (a.agf === agf || a.emisor === agf) && a.estado === 'active');
+    const acuerdo = listaAcuerdos.find((a: any) => {
+      const matchAgf = a.agf === agf || a.emisor === agf;
+      if (!matchAgf) return false;
+      if (a.estado !== 'active') return false;
+      if (a.vigente_desde && a.vigente_desde > cartola.corte) return false;
+      if (a.vigente_hasta && a.vigente_hasta < cartola.corte) return false;
+      return true;
+    });
     return !!acuerdo;
   });
 
@@ -43,7 +49,7 @@ export function buscarMejorAlternativaCategoria(
 
     for (const serie of prod.series) {
       // R04: verificar elegibilidad estricta de la serie candidata para este cliente y monto
-      const evalSerie = evaluarSerie(prodConAgf, serie, montoClp, cartola.cliente, acuerdos, null);
+      const evalSerie = evaluarSerie(prodConAgf, serie, montoClp, cartola.cliente, acuerdos, null, cartola.corte);
       if (evalSerie.estado === 'eligible') {
         if (!mejorOpcion || evalSerie.tac_pct < mejorOpcion.tacPct) {
           mejorOpcion = {

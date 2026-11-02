@@ -13,7 +13,8 @@ export function evaluarSerie(
   ticketMonto: number,
   cliente: Cliente,
   acuerdos: Acuerdos,
-  serieActualCodigo: string | null
+  serieActualCodigo: string | null,
+  fechaCorte = '2026-09-30'
 ): EvaluacionSerie {
   // Posicion que el cliente mantiene actualmente en su cartola
   if (serie.codigo === serieActualCodigo) {
@@ -27,19 +28,40 @@ export function evaluarSerie(
     };
   }
 
-  // Regla 0: verificar acuerdo de distribucion activo y serie habilitada
-  const acuerdo = acuerdos.acuerdos.find(
-    (a) => a.emisor === producto.emisor && a.estado === 'active'
-  );
-  const comision = acuerdo?.series?.[producto.id]?.[serie.codigo];
-  if (!acuerdo || comision === undefined) {
+  const listaAcuerdos = acuerdos.acuerdos ?? acuerdos.distribucion ?? [];
+
+  // R01: verificar que exista acuerdo activo y vigente a la fecha de corte
+  const acuerdo = listaAcuerdos.find((a) => {
+    const agf = a.emisor ?? a.agf;
+    const agfProd = producto.administradora ?? producto.emisor;
+    if (agf !== agfProd) return false;
+    if (a.estado !== 'active') return false;
+    if (a.vigente_desde && a.vigente_desde > fechaCorte) return false;
+    if (a.vigente_hasta && a.vigente_hasta < fechaCorte) return false;
+    return true;
+  });
+
+  // Regla 0: AGF sin acuerdo vigente o serie no habilitada en convenio
+  if (!acuerdo) {
     return {
       codigo: serie.codigo,
       serie: serie.codigo,
       tac_pct: serie.tac_pct,
       estado: 'out_of_scope',
       regla: 0,
-      motivo: `AGF ${producto.emisor} no tiene acuerdo vigente`
+      motivo: `AGF ${producto.emisor} no tiene acuerdo de distribución vigente`
+    };
+  }
+
+  const comision = acuerdo.series?.[producto.id]?.[serie.codigo];
+  if (comision === undefined) {
+    return {
+      codigo: serie.codigo,
+      serie: serie.codigo,
+      tac_pct: serie.tac_pct,
+      estado: 'out_of_scope',
+      regla: 0,
+      motivo: `Acuerdo con AGF ${producto.emisor} no habilita la serie ${serie.codigo}`
     };
   }
 

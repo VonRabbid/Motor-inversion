@@ -29,7 +29,7 @@ export function calcularDiagnostico(
   let totalIdentificado = 0;
   let totalNoIdentificado = 0;
 
-  // Clasificar posiciones identificadas en catalogo frente a posiciones no identificadas
+  // Clasificar posiciones identificadas en catalogo frente a posiciones no identificadas o fuera de TAC
   for (const pos of cartola.posiciones) {
     totalCartera += pos.monto_clp;
 
@@ -45,12 +45,22 @@ export function calcularDiagnostico(
 
     if (pos.producto === null) {
       totalNoIdentificado += pos.monto_clp;
+      continue;
+    }
+
+    const prodCat = catalogo.productos.find((p) => p.id === pos.producto);
+    // Se excluyen de la TAC y del total identificado productos no hallados, seguros con ahorro u otros
+    if (!prodCat) {
+      totalNoIdentificado += pos.monto_clp;
+      alertas.push(`Producto no encontrado en catálogo: ${pos.producto}`);
+    } else if (prodCat.tipo === 'insurance_savings' || prodCat.tipo === 'other') {
+      totalNoIdentificado += pos.monto_clp;
+      alertas.push(`Producto ${prodCat.nombre} (${prodCat.tipo}) excluido del cálculo de TAC ponderada según R02`);
     } else {
       totalIdentificado += pos.monto_clp;
     }
   }
 
-  // Porcentaje no identificado sobre el patrimonio total declarado
   const pctNoIdentificado = totalCartera > 0
     ? Number(((totalNoIdentificado / totalCartera) * 100).toFixed(2))
     : 0;
@@ -60,18 +70,14 @@ export function calcularDiagnostico(
 
   // R02: procesar unicamente activos identificados para ponderacion de costos
   for (const pos of cartola.posiciones) {
-    if (pos.producto === null) {
-      continue;
-    }
+    if (pos.producto === null) continue;
 
     const productoCat = catalogo.productos.find((p) => p.id === pos.producto);
-    if (!productoCat) {
-      alertas.push(`Producto no encontrado en catalogo: ${pos.producto}`);
+    if (!productoCat || productoCat.tipo === 'insurance_savings' || productoCat.tipo === 'other') {
       continue;
     }
 
     let tacActualPct = 0;
-
     // R02: depositos a plazo y efectivo entran con costo 0 en la cartola
     if (productoCat.tipo === 'time_deposit' || productoCat.tipo === 'cash') {
       tacActualPct = 0;
@@ -80,16 +86,14 @@ export function calcularDiagnostico(
       tacActualPct = serieCat ? serieCat.tac_pct : 0;
     }
 
-    // Costo anual en pesos de la posicion actual
     const costoPosicionClp = Math.round(pos.monto_clp * (tacActualPct / 100));
     costoActualAnual += costoPosicionClp;
 
-    // Peso porcentual relativo al total identificado
     const pesoPct = totalIdentificado > 0
       ? Number(((pos.monto_clp / totalIdentificado) * 100).toFixed(2))
       : 0;
 
-    // R04: evaluacion de cada una de las series disponibles en el producto
+    // R04: evaluacion de series considerando la fecha de corte
     const seriesEvaluadas: EvaluacionSerie[] = productoCat.series.map((serie) =>
       evaluarSerie(
         productoCat,
@@ -97,7 +101,8 @@ export function calcularDiagnostico(
         pos.monto_clp,
         cartola.cliente,
         acuerdos,
-        pos.serie
+        pos.serie,
+        cartola.corte
       )
     );
 
@@ -120,7 +125,6 @@ export function calcularDiagnostico(
     });
   }
 
-  // R02: TAC ponderada sobre el total identificado redondeada a 4 decimales
   const tacPonderadaPct = totalIdentificado > 0
     ? Number(((costoActualAnual / totalIdentificado) * 100).toFixed(4))
     : 0;
