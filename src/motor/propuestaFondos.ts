@@ -5,15 +5,15 @@ import type {
   ProductoCatalogo,
   SustitucionFondo,
   MetricaConcentracion,
-  ResultadoPropuestaFondos
+  ResultadoPropuestaFondos,
+  Supuestos
 } from '../types/domain';
 import { evaluarSerie } from './evaluadorSeries';
 
-// Limites maximos regulatorios y de diversificacion (R07)
 export const LIMITE_MAX_FONDO_PCT = 40;
 export const LIMITE_MAX_AGF_PCT = 60;
 
-// R07: busca en el catalogo el activo de menor TAC dentro de la misma categoria con serie elegible
+// R07: busca el fondo de menor TAC dentro de la misma categoria con igualdad estricta
 export function buscarMejorAlternativaCategoria(
   categoria: string,
   montoClp: number,
@@ -23,19 +23,17 @@ export function buscarMejorAlternativaCategoria(
 ): { producto: ProductoCatalogo; serieCodigo: string; tacPct: number } | null {
   const listaAcuerdos = acuerdos.distribucion ?? acuerdos.acuerdos ?? [];
 
-  // R01: filtrar productos de administradoras que mantengan acuerdo vigente de distribucion
   const productosCandidatos = catalogo.productos.filter((p) => {
+    // Igualdad estricta de categoria
+    if (p.categoria !== categoria) return false;
     const agf = p.administradora ?? p.emisor;
-    const catMatches = p.categoria === categoria || p.categoria.startsWith(categoria) || categoria.startsWith(p.categoria);
-    if (!catMatches) return false;
-    const acuerdo = listaAcuerdos.find((a: any) => {
-      const matchAgf = a.agf === agf || a.emisor === agf;
-      if (!matchAgf) return false;
-      if (a.estado !== 'active') return false;
-      if (a.vigente_desde && a.vigente_desde > cartola.corte) return false;
-      if (a.vigente_hasta && a.vigente_hasta < cartola.corte) return false;
-      return true;
-    });
+    const acuerdo = listaAcuerdos.find(
+      (a: any) =>
+        (a.agf === agf || a.emisor === agf) &&
+        a.estado === 'active' &&
+        (!a.vigente_desde || a.vigente_desde <= cartola.corte) &&
+        (!a.vigente_hasta || a.vigente_hasta >= cartola.corte)
+    );
     return !!acuerdo;
   });
 
@@ -48,7 +46,6 @@ export function buscarMejorAlternativaCategoria(
     };
 
     for (const serie of prod.series) {
-      // R04: verificar elegibilidad estricta de la serie candidata para este cliente y monto
       const evalSerie = evaluarSerie(prodConAgf, serie, montoClp, cartola.cliente, acuerdos, null, cartola.corte);
       if (evalSerie.estado === 'eligible') {
         if (!mejorOpcion || evalSerie.tac_pct < mejorOpcion.tacPct) {
@@ -65,37 +62,46 @@ export function buscarMejorAlternativaCategoria(
   return mejorOpcion;
 }
 
-// R07: genera propuesta de sustitucion por fondos de menor costo y valida concentracion
+// R07: propuesta de fondos equivalentes, balance de volatilidad y limites de concentracion
 export function calcularPropuestaFondos(
   cartola: Cartola,
   catalogo: Catalogo,
-  acuerdos: Acuerdos
+  acuerdos: Acuerdos,
+  supuestos?: Supuestos
 ): ResultadoPropuestaFondos {
   let totalIdentificado = 0;
   let costoActualTotal = 0;
   let costoPropuestoTotal = 0;
   const sustituciones: SustitucionFondo[] = [];
 
-  // Mapeo inicial de posiciones identificadas
+  let sumaVolActualPond = 0;
+  let sumaVolPropPond = 0;
+  let sumaRetActualPond = 0;
+  let sumaRetPropPond = 0;
+
   for (const pos of cartola.posiciones) {
     if (pos.producto === null) continue;
 
     const prodActual = catalogo.productos.find((p) => p.id === pos.producto);
-    if (!prodActual) continue;
+    if (!prodActual || prodActual.tipo === 'insurance_savings' || prodActual.tipo === 'other') continue;
 
     const agfActual = prodActual.administradora ?? prodActual.emisor;
     totalIdentificado += pos.monto_clp;
 
-    // TAC actual segun serie o 0% para depositos/efectivo
     let tacActual = 0;
     if (prodActual.tipo !== 'time_deposit' && prodActual.tipo !== 'cash') {
       const serieObj = prodActual.series.find((s) => s.codigo === pos.serie);
       tacActual = serieObj ? serieObj.tac_pct : 0;
     }
+
     const costoActualPos = Math.round(pos.monto_clp * (tacActual / 100));
     costoActualTotal += costoActualPos;
 
-    // Buscar si existe un fondo mas eficiente en la misma categoria
+    // Supuestos de volatilidad y retorno bruto de la categoria
+    const catSupuesto = (supuestos?.categorias as any)?.[prodActual.categoria];
+    const volCat = catSupuesto?.volatilidad_pct ?? 0;
+    const retBrutoCat = catSupuesto?.retorno_real_bruto_pct ?? catSupuesto?.retorno_real_pct ?? 0;
+
     const mejor = buscarMejorAlternativaCategoria(
       prodActual.categoria,
       pos.monto_clp,
@@ -127,7 +133,6 @@ export function calcularPropuestaFondos(
         esMismoProducto: mejor.producto.id === prodActual.id
       });
     } else {
-      // Si la posicion actual ya es optima o no tiene reemplazo mas economico
       costoPropuestoTotal += costoActualPos;
       sustituciones.push({
         idProductoActual: prodActual.id,
@@ -146,9 +151,14 @@ export function calcularPropuestaFondos(
         esMismoProducto: true
       });
     }
+
+    sumaVolActualPond += pos.monto_clp * volCat;
+    sumaVolPropPond += pos.monto_clp * volCat;
+    sumaRetActualPond += pos.monto_clp * retBrutoCat;
+    sumaRetPropPond += pos.monto_clp * retBrutoCat;
   }
 
-  // Evaluacion de limites de diversificacion sobre la cartera propuesta
+  // Evaluacion de limites de diversificacion
   const acumFondo: Record<string, { nombre: string; monto: number }> = {};
   const acumAgf: Record<string, { nombre: string; monto: number }> = {};
 
@@ -210,6 +220,9 @@ export function calcularPropuestaFondos(
     ? Number(((costoPropuestoTotal / totalIdentificado) * 100).toFixed(4))
     : 0;
 
+  const volActualPonderada = totalIdentificado > 0 ? Number((sumaVolActualPond / totalIdentificado).toFixed(2)) : 0;
+  const volPropuestaPonderada = totalIdentificado > 0 ? Number((sumaVolPropPond / totalIdentificado).toFixed(2)) : 0;
+
   return {
     sustituciones,
     totalIdentificadoClp: totalIdentificado,
@@ -218,8 +231,10 @@ export function calcularPropuestaFondos(
     ahorroTotalAnualClp: ahorroTotal,
     tacActualPonderadaPct: tacActualPonderada,
     tacPropuestaPonderadaPct: tacPropuestaPonderada,
+    volatilidadActualPonderadaPct: volActualPonderada,
+    volatilidadPropuestaPonderadaPct: volPropuestaPonderada,
     concentracionPorFondo,
     concentracionPorAgf,
     alertasConcentracion
-  };
+  } as any;
 }

@@ -10,9 +10,9 @@ const catalogo = catalogoData as unknown as Catalogo;
 const acuerdos = acuerdosData as unknown as Acuerdos;
 
 describe('Nivel 2 — Sustitución por Fondos Equivalentes y Límites (R07)', () => {
-  it('Test 1: Identifica fondos más económicos dentro de la misma categoría bajo acuerdos vigentes', () => {
+  it('Test 1: Identifica fondos más económicos con igualdad estricta de categoría', () => {
     const mejorRentaFija = buscarMejorAlternativaCategoria(
-      'deuda_uf',
+      'deuda_uf_mediano',
       50_000_000,
       cartola,
       catalogo,
@@ -20,21 +20,20 @@ describe('Nivel 2 — Sustitución por Fondos Equivalentes y Límites (R07)', ()
     );
 
     expect(mejorRentaFija).not.toBeNull();
-    // Debe seleccionar una serie elegible de una AGF con acuerdo activo (R01 y R04)
-    expect(['alfa', 'beta']).toContain(mejorRentaFija?.producto.administradora);
-    expect(mejorRentaFija?.tacPct).toBeLessThan(1.5);
+    // Delta Deuda Corp serie B (1.05%) es más barato que Alfa serie B (1.45%)
+    expect(mejorRentaFija?.producto.id).toBe('delta-deuda-corp');
+    expect(mejorRentaFija?.serieCodigo).toBe('B');
+    expect(mejorRentaFija?.tacPct).toBe(1.05);
   });
 
   it('Test 2: La propuesta de sustitución genera ahorro positivo sin incrementar el riesgo de categoría', () => {
     const res = calcularPropuestaFondos(cartola, catalogo, acuerdos);
-
     expect(res.sustituciones.length).toBeGreaterThan(0);
     expect(res.ahorroTotalAnualClp).toBeGreaterThanOrEqual(1_650_000);
     expect(res.tacPropuestaPonderadaPct).toBeLessThan(res.tacActualPonderadaPct);
   });
 
   it('Test 3: Alertas de concentración ante violación de límites (máx 40% por fondo y 60% por AGF)', () => {
-    // Cartola modificada concentrando el 80% del capital en un único producto
     const cartolaConcentrada: Cartola = {
       ...cartola,
       posiciones: [
@@ -43,25 +42,21 @@ describe('Nivel 2 — Sustitución por Fondos Equivalentes y Límites (R07)', ()
           serie: 'CLASI',
           cuotas: 184000,
           valor_cuota: 1000,
-          monto_clp: 184_000_000 // 80% de 230M
+          monto_clp: 184_000_000
         },
         {
           producto: 'beta-balanceado',
           serie: 'A',
           cuotas: 46000,
           valor_cuota: 1000,
-          monto_clp: 46_000_000 // 20% de 230M
+          monto_clp: 46_000_000
         }
       ]
     };
 
     const resConcentrada = calcularPropuestaFondos(cartolaConcentrada, catalogo, acuerdos);
     expect(resConcentrada.alertasConcentracion.length).toBeGreaterThan(0);
-
-    const alertaFondo = resConcentrada.alertasConcentracion.find((a) => a.includes('fondo'));
-    const alertaAgf = resConcentrada.alertasConcentracion.find((a) => a.includes('AGF'));
-
-    expect(alertaFondo).toBeDefined();
-    expect(alertaAgf).toBeDefined();
+    expect(resConcentrada.alertasConcentracion.some((a) => a.includes('fondo'))).toBe(true);
+    expect(resConcentrada.alertasConcentracion.some((a) => a.includes('AGF'))).toBe(true);
   });
 });

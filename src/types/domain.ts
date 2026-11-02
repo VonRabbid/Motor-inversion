@@ -281,6 +281,8 @@ export interface ResultadoPropuestaFondos {
   ahorroTotalAnualClp: number;
   tacActualPonderadaPct: number;
   tacPropuestaPonderadaPct: number;
+  volatilidadActualPonderadaPct?: number;
+  volatilidadPropuestaPonderadaPct?: number;
   concentracionPorFondo: Record<string, MetricaConcentracion>;
   concentracionPorAgf: Record<string, MetricaConcentracion>;
   alertasConcentracion: string[];
@@ -290,5 +292,34 @@ export interface ResultadoPropuestaFondos {
 export interface ResultadoNivel2 {
   metas: ProyeccionMetasEscenarios;
   fondos: ResultadoPropuestaFondos;
+  carteraMeta?: CarteraSugeridaMeta;
 }
 
+// Cartera construida para financiar la meta financiera (R06 Pasos 3 a 6)
+export interface FondoAsignadoMeta {
+  tramoId: string;
+  tramoNombre: string;
+  idProducto: string;
+  nombreProducto: string;
+  agf: string;
+  serie: string;
+  tacPct: number;
+  categoria: string;
+  liquidezDias: number;
+  capitalAsignadoUf: number;
+  capitalAsignadoClp: number;
+  pesoCarteraPct: number;
+  pesoCrecimiento: number;
+  volatilidadPct: number;
+}
+
+export interface CarteraSugeridaMeta {
+  asignaciones: FondoAsignadoMeta[];
+  pesoCrecimientoCarteraPct: number;
+  maxCrecimientoPermitidoPct: number;
+  aplicaReduccion24Meses: boolean;
+  cumplePerfilCrecimiento: boolean;
+  tacPonderadaMetaPct: number;
+  volatilidadPonderadaMetaPct: number;
+  alertas: string[];
+}

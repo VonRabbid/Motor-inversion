@@ -9,7 +9,7 @@ import type {
 } from '../types/domain';
 import { calcularDiagnostico } from './diagnostico';
 import { calcularPropuestaSeries } from './propuestaSeries';
-import { proyectarEscenariosMeta } from './metas';
+import { proyectarEscenariosMeta, construirCarteraMeta } from './metas';
 import { calcularPropuestaFondos } from './propuestaFondos';
 
 export * from './evaluadorSeries';
@@ -18,16 +18,12 @@ export * from './propuestaSeries';
 export * from './metas';
 export * from './propuestaFondos';
 
-// Orquestador de diagnostico y propuestas de optimizacion de series (Nivel 1)
 export function ejecutarNivel1(
   cartola: Cartola,
   catalogo: Catalogo,
   acuerdos: Acuerdos
 ): DiagnosticoCartola {
-  // R02: calculo de costos, ponderaciones y evaluacion de series por posicion
   const diag = calcularDiagnostico(cartola, catalogo, acuerdos);
-
-  // R05: determinacion de mejor serie elegible y cuantificacion de ahorros
   const propuesta = calcularPropuestaSeries(
     diag.posiciones,
     diag.total_identificado_clp,
@@ -49,19 +45,28 @@ export function ejecutarNivel1(
   };
 }
 
-// Orquestador de calce de metas financieras y propuesta de fondos equivalentes (Nivel 2)
 export function ejecutarNivel2(
   meta: MetaFinanciera,
   supuestos: Supuestos,
   cartola: Cartola,
   catalogo: Catalogo,
   acuerdos: Acuerdos
-): ResultadoNivel2 {
-  const metas = proyectarEscenariosMeta(meta, supuestos, cartola?.corte || '2026-09-30');
-  const fondos = calcularPropuestaFondos(cartola, catalogo, acuerdos);
+): ResultadoNivel2 & { carteraMeta?: any } {
+  const fechaCorte = cartola?.corte || '2026-09-30';
+  const metas = proyectarEscenariosMeta(meta, supuestos, fechaCorte);
+  const fondos = calcularPropuestaFondos(cartola, catalogo, acuerdos, supuestos);
+  const carteraMeta = construirCarteraMeta(
+    meta,
+    supuestos,
+    catalogo,
+    acuerdos,
+    cartola?.cliente?.perfil_riesgo ?? 'moderado',
+    fechaCorte
+  );
 
   return {
     metas,
-    fondos
-  };
+    fondos,
+    carteraMeta
+  } as any;
 }

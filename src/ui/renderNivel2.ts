@@ -16,17 +16,17 @@ function formatoPct(pct: number, decimales = 2): string {
   return `${pct.toFixed(decimales).replace('.', ',')}%`;
 }
 
-// Renderiza la vista ejecutiva de metas y fondos con tipografia directa y sin contenedores redundantes
-export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): void {
+export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { carteraMeta?: any }): void {
   const base = data.metas.resultadoBase;
   const esc = data.metas.escenarios;
   const fondos = data.fondos;
+  const carteraMeta = data.carteraMeta;
 
   const esSuperavit = base.estadoBalance === 'superavit';
   const colorBalance = esSuperavit ? 'var(--success-color)' : 'var(--danger-color)';
 
   const html = `
-    <!-- Paneles superiores paralelos alineados al estilo general -->
+    <!-- Paneles superiores paralelos -->
     <div class="dashboard-top-grid">
       <!-- Panel 1: Diagnóstico de la Meta -->
       <div class="panel-card">
@@ -57,11 +57,11 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): voi
         </div>
       </div>
 
-      <!-- Panel 2: Propuesta con Fondos Equivalentes (R07) sin caja verde envolvente -->
+      <!-- Panel 2: Propuesta con Fondos Equivalentes (R07) -->
       <div class="panel-card">
-        <h2 class="panel-card-title">Propuesta con Fondos Equivalentes</h2>
+        <h2 class="panel-card-title">Propuesta con Fondos Equivalentes (R07)</h2>
         <div style="margin-bottom: 20px;">
-          <div style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 2px;">Ahorro anual estimado (R07)</div>
+          <div style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 2px;">Ahorro anual estimado</div>
           <div style="font-size: 1.875rem; font-weight: 800; color: var(--success-color); line-height: 1.2;">
             ${formatoCLP(fondos.ahorroTotalAnualClp)} / año
           </div>
@@ -82,10 +82,52 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): voi
       </div>
     </div>
 
-    <!-- Sensibilidad en Escenarios sin pastillas contenedoras en los estados -->
-    <h2 class="section-title">Sensibilidad de la Meta en Escenarios de Retorno Real</h2>
+    <!-- Cartera construida para la meta financiera (R06 Pasos 3 a 6) -->
+    ${carteraMeta ? `
+      <section class="table-card">
+        <div class="table-card-header">
+          <h2>Asignación de Cartera Sugerida para la Meta (R06)</h2>
+          <span style="font-size: 0.8125rem; color: ${carteraMeta.cumplePerfilCrecimiento ? 'var(--success-color)' : 'var(--danger-color)'}; font-weight: 600;">
+            Crecimiento: ${formatoPct(carteraMeta.pesoCrecimientoCarteraPct)} (Máx. permitido: ${formatoPct(carteraMeta.maxCrecimientoPermitidoPct)})
+          </span>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Tramo</th>
+                <th>Fondo Seleccionado</th>
+                <th>AGF</th>
+                <th>Serie</th>
+                <th class="text-right">TAC %</th>
+                <th class="text-right">Asignación UF</th>
+                <th class="text-right">Asignación CLP</th>
+                <th class="text-right">Peso Cartera</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${carteraMeta.asignaciones.map((a: any) => `
+                <tr>
+                  <td><strong>${a.tramoId}</strong> (${a.tramoNombre})</td>
+                  <td>${a.nombreProducto}</td>
+                  <td><span class="badge badge-gray">${a.agf.toUpperCase()}</span></td>
+                  <td><span class="badge badge-eligible">${a.serie}</span></td>
+                  <td class="text-right">${formatoPct(a.tacPct)}</td>
+                  <td class="text-right"><strong>${formatoUF(a.capitalAsignadoUf)}</strong></td>
+                  <td class="text-right">${formatoCLP(a.capitalAsignadoClp)}</td>
+                  <td class="text-right">${formatoPct(a.pesoCarteraPct)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ` : ''}
+
+    <!-- Sensibilidad en Escenarios de Retorno Real -->
+    <h2 class="section-title">Sensibilidad de la Meta en Escenarios de Retorno Real (R03 y R06)</h2>
     <div class="scenarios-grid">
-      ${Object.values(esc).map((item) => {
+      ${Object.values(esc).map((item: any) => {
         const ok = item.alcanza;
         return `
           <div class="scenario-card ${ok ? 'ok' : 'danger'}">
@@ -96,7 +138,7 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): voi
               </span>
             </div>
             <div style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 6px;">
-              Ajuste de tasa: <strong>${item.ajustePp >= 0 ? '+' : ''}${item.ajustePp} pp</strong>
+              Ajuste supuesto: <strong>${item.ajustePp >= 0 ? '+' : ''}${item.ajustePp} pp</strong>
             </div>
             <div style="font-size: 1.25rem; font-weight: 700; margin: 4px 0;">
               VP: ${formatoUF(item.totalVpUf)}
@@ -129,7 +171,7 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): voi
           </tr>
         </thead>
         <tbody>
-          ${base.desembolsos.map((d) => `
+          ${base.desembolsos.map((d: any) => `
             <tr>
               <td><strong>${d.fecha}</strong></td>
               <td class="text-right">${formatoUF(d.montoUf)}</td>
@@ -162,7 +204,7 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): voi
           </tr>
         </thead>
         <tbody>
-          ${fondos.sustituciones.map((s) => `
+          ${fondos.sustituciones.map((s: any) => `
             <tr>
               <td><span class="badge badge-blocked">${s.categoria}</span></td>
               <td>${s.nombreProductoActual}</td>
@@ -178,10 +220,9 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2): voi
       </table>
     </div>
 
-    <!-- Declaracion legal obligatoria R01 y R07 -->
     <footer class="legal-footer">
       <strong>Declaración de Universo y Límites de Inversión (R01 y R07):</strong>
-      Las propuestas de fondos equivalentes respetan los acuerdos vigentes de distribución. Los horizontes de inversión se calzan según la regla de intervalos semiabiertos. Diversificación sujeta a límites máximos de 40% por fondo y 60% por administradora.
+      Esta propuesta considera productos de las administradoras con las que el distribuidor mantiene acuerdos vigentes. Los horizontes se calzan en intervalos semiabiertos. Diversificación sujeta a límites de 40% por fondo y 60% por administradora. Todos los retornos futuros corresponden a supuestos declarados y no constituyen promesa de rentabilidad.
     </footer>
   `;
 
