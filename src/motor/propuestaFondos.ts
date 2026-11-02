@@ -2,6 +2,7 @@ import type {
   Cartola,
   Catalogo,
   Acuerdos,
+  AcuerdoAGF,
   ProductoCatalogo,
   SustitucionFondo,
   MetricaConcentracion,
@@ -21,6 +22,119 @@ export interface CandidatoFondo {
   esMismoProducto: boolean;
 }
 
+type AcumuladoMonto = Record<string, { nombre: string; monto: number }>;
+
+// R01: depositos a plazo y efectivo no requieren acuerdo de AGF
+function esProductoSinAgf(producto: Pick<ProductoCatalogo, 'tipo'>): boolean {
+  return producto.tipo === 'time_deposit' || producto.tipo === 'cash';
+}
+
+function buscarAcuerdoVigente(
+  agf: string,
+  listaAcuerdos: AcuerdoAGF[],
+  fechaCorte: string
+): AcuerdoAGF | undefined {
+  return listaAcuerdos.find(
+    (a) =>
+      (a.agf === agf || a.emisor === agf) &&
+      a.estado === 'active' &&
+      (!a.vigente_desde || a.vigente_desde <= fechaCorte) &&
+      (!a.vigente_hasta || a.vigente_hasta >= fechaCorte)
+  );
+}
+
+function respetaLimitesConcentracion(
+  cand: CandidatoFondo,
+  montoClp: number,
+  acumFondo: AcumuladoMonto,
+  acumAgf: AcumuladoMonto,
+  maxFondoMontoClp: number,
+  maxAgfMontoClp: number
+): boolean {
+  const montoFondoFuturo = (acumFondo[cand.producto.id]?.monto ?? 0) + montoClp;
+  const montoAgfFuturo = (acumAgf[cand.agf]?.monto ?? 0) + montoClp;
+  return montoFondoFuturo <= maxFondoMontoClp && montoAgfFuturo <= maxAgfMontoClp;
+}
+
+// R07 tercer escalon: reasignacion a una categoria equivalente o de menor volatilidad
+function buscarAlternativaMenorVolatilidad(
+  prodActual: ProductoCatalogo,
+  montoClp: number,
+  tacActual: number,
+  volCatActual: number,
+  cartola: Cartola,
+  catalogo: Catalogo,
+  acuerdos: Acuerdos,
+  supuestos: Supuestos | undefined,
+  acumFondo: AcumuladoMonto,
+  acumAgf: AcumuladoMonto,
+  maxFondoMontoClp: number,
+  maxAgfMontoClp: number
+): CandidatoFondo | null {
+  const listaAcuerdos = acuerdos.distribucion ?? acuerdos.acuerdos ?? [];
+  const categoriasSupuestas = supuestos?.categorias ?? {};
+  const alternativas: Array<CandidatoFondo & { volatilidadPct: number }> = [];
+
+  for (const prod of catalogo.productos) {
+    if (prod.id === prodActual.id) continue;
+    if (prod.tipo === 'time_deposit' || prod.tipo === 'cash') continue;
+    if (prod.tipo === 'insurance_savings' || prod.tipo === 'other') continue;
+
+    const volCatCandidata = categoriasSupuestas[prod.categoria]?.volatilidad_pct;
+    if (volCatCandidata === undefined || volCatCandidata > volCatActual + 0.0001) continue;
+
+    const agf = prod.administradora ?? prod.emisor;
+    if (!buscarAcuerdoVigente(agf, listaAcuerdos, cartola.corte)) continue;
+
+    const prodConAgf: ProductoCatalogo = {
+      ...prod,
+      administradora: prod.administradora ?? prod.emisor
+    };
+
+    for (const serie of prod.series) {
+      const evalSerie = evaluarSerie(
+        prodConAgf,
+        serie,
+        montoClp,
+        cartola.cliente,
+        acuerdos,
+        null,
+        cartola.corte
+      );
+
+      if (evalSerie.estado !== 'eligible' || evalSerie.tac_pct >= tacActual) continue;
+
+      const candidato: CandidatoFondo & { volatilidadPct: number } = {
+        producto: prodConAgf,
+        serieCodigo: evalSerie.codigo,
+        tacPct: evalSerie.tac_pct,
+        agf,
+        esMismoProducto: false,
+        volatilidadPct: volCatCandidata
+      };
+
+      if (respetaLimitesConcentracion(candidato, montoClp, acumFondo, acumAgf, maxFondoMontoClp, maxAgfMontoClp)) {
+        alternativas.push(candidato);
+      }
+    }
+  }
+
+  alternativas.sort((a, b) => {
+    if (Math.abs(a.tacPct - b.tacPct) > 0.0001) return a.tacPct - b.tacPct;
+    return a.volatilidadPct - b.volatilidadPct;
+  });
+
+  if (alternativas.length === 0) return null;
+  const mejor = alternativas[0];
+  return {
+    producto: mejor.producto,
+    serieCodigo: mejor.serieCodigo,
+    tacPct: mejor.tacPct,
+    agf: mejor.agf,
+    esMismoProducto: false
+  };
+}
+
 // Obtiene todas las opciones elegibles para una categoria ordenadas por costo y preferencia de fondo
 export function obtenerCandidatosCategoria(
   categoria: string,
@@ -34,15 +148,9 @@ export function obtenerCandidatosCategoria(
 
   const productosCandidatos = catalogo.productos.filter((p) => {
     if (p.categoria !== categoria) return false;
+    if (esProductoSinAgf(p)) return true;
     const agf = p.administradora ?? p.emisor;
-    const acuerdo = listaAcuerdos.find(
-      (a: any) =>
-        (a.agf === agf || a.emisor === agf) &&
-        a.estado === 'active' &&
-        (!a.vigente_desde || a.vigente_desde <= cartola.corte) &&
-        (!a.vigente_hasta || a.vigente_hasta >= cartola.corte)
-    );
-    return !!acuerdo;
+    return !!buscarAcuerdoVigente(agf, listaAcuerdos, cartola.corte);
   });
 
   const candidatos: CandidatoFondo[] = [];
@@ -52,6 +160,18 @@ export function obtenerCandidatosCategoria(
       ...prod,
       administradora: prod.administradora ?? prod.emisor
     };
+
+    // R01: depositos a plazo y efectivo entran directo con TAC 0%
+    if (esProductoSinAgf(prodConAgf)) {
+      candidatos.push({
+        producto: prodConAgf,
+        serieCodigo: 'Única',
+        tacPct: 0,
+        agf: prodConAgf.administradora ?? prodConAgf.emisor,
+        esMismoProducto: prod.id === idProductoActual
+      });
+      continue;
+    }
 
     for (const serie of prod.series) {
       const evalSerie = evaluarSerie(prodConAgf, serie, montoClp, cartola.cliente, acuerdos, null, cartola.corte);
@@ -107,6 +227,7 @@ export function calcularPropuestaFondos(
 ): ResultadoPropuestaFondos {
   const limiteMaxFondoPct = supuestos?.limites?.max_por_fondo_pct ?? LIMITE_MAX_FONDO_PCT;
   const limiteMaxAgfPct = supuestos?.limites?.max_por_agf_pct ?? LIMITE_MAX_AGF_PCT;
+  const listaAcuerdos = acuerdos.distribucion ?? acuerdos.acuerdos ?? [];
 
   let totalIdentificado = 0;
   for (const pos of cartola.posiciones) {
@@ -163,19 +284,38 @@ export function calcularPropuestaFondos(
     );
 
     const candidatosMasBaratos = candidatos.filter((c) => c.tacPct < tacActual);
+    const agfActualConAcuerdo = !!buscarAcuerdoVigente(agfActual, listaAcuerdos, cartola.corte);
+    const productoActualSinAgf = esProductoSinAgf(prodActual);
 
-    let elegido: CandidatoFondo | null = null;
+    // R07: solo se elige un candidato que respete los limites 40% por fondo y 60% por AGF
+    let elegido: CandidatoFondo | null = candidatosMasBaratos.find((cand) =>
+      respetaLimitesConcentracion(
+        cand,
+        pos.monto_clp,
+        acumFondo,
+        acumAgf,
+        maxFondoMontoClp,
+        maxAgfMontoClp
+      )
+    ) ?? null;
 
-    if (candidatosMasBaratos.length > 0) {
-      // Buscar la alternativa mas barata que respete los limites maximos de fondo y AGF
-      const candidatoSinExceso = candidatosMasBaratos.find((cand) => {
-        const montoFondoFuturo = (acumFondo[cand.producto.id]?.monto ?? 0) + pos.monto_clp;
-        const montoAgfFuturo = (acumAgf[cand.agf]?.monto ?? 0) + pos.monto_clp;
-        return montoFondoFuturo <= maxFondoMontoClp && montoAgfFuturo <= maxAgfMontoClp;
-      });
-
-      // Si existe uno que respete limites se asigna; de lo contrario se opta por el mas economico de la categoria
-      elegido = candidatoSinExceso ?? candidatosMasBaratos[0];
+    // Tercer escalon: si la AGF no tiene acuerdo o la categoria no ofrece una opcion valida,
+    // se busca una categoria equivalente o de menor volatilidad con acuerdo vigente.
+    if (!elegido && (!agfActualConAcuerdo || candidatosMasBaratos.length > 0)) {
+      elegido = buscarAlternativaMenorVolatilidad(
+        prodActual,
+        pos.monto_clp,
+        tacActual,
+        volCatActual,
+        cartola,
+        catalogo,
+        acuerdos,
+        supuestos,
+        acumFondo,
+        acumAgf,
+        maxFondoMontoClp,
+        maxAgfMontoClp
+      );
     }
 
     if (elegido) {
@@ -219,6 +359,8 @@ export function calcularPropuestaFondos(
       sumaRetPropPond += pos.monto_clp * retBrutoCatSugerida;
     } else {
       costoPropuestoTotal += costoActualPos;
+      const sinAlternativaEnUniverso = !agfActualConAcuerdo && !productoActualSinAgf;
+
       sustituciones.push({
         idProductoActual: prodActual.id,
         nombreProductoActual: prodActual.nombre,
@@ -226,14 +368,16 @@ export function calcularPropuestaFondos(
         montoClp: pos.monto_clp,
         serieActual: pos.serie,
         tacActualPct: tacActual,
-        idProductoSugerido: prodActual.id,
-        nombreProductoSugerido: prodActual.nombre,
-        serieSugerida: pos.serie ?? 'N/A',
+        idProductoSugerido: sinAlternativaEnUniverso ? '' : prodActual.id,
+        nombreProductoSugerido: sinAlternativaEnUniverso
+          ? 'Sin alternativa dentro de los acuerdos vigentes'
+          : prodActual.nombre,
+        serieSugerida: sinAlternativaEnUniverso ? '—' : (pos.serie ?? 'N/A'),
         tacSugeridaPct: tacActual,
         ahorroBps: 0,
         ahorroAnualClp: 0,
-        agfSugerida: agfActual,
-        esMismoProducto: true
+        agfSugerida: sinAlternativaEnUniverso ? '—' : agfActual,
+        esMismoProducto: !sinAlternativaEnUniverso
       });
 
       if (!acumFondo[prodActual.id]) {

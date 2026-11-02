@@ -555,6 +555,33 @@ tfoot td:last-child {
   color: #64748b;
 }
 
+/* Declaraciones metodologicas visibles en pantalla e impresion */
+.methodology-card {
+  background-color: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin-top: 24px;
+  break-inside: avoid;
+}
+
+.methodology-list {
+  margin: 8px 0 0 18px;
+  padding: 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.methodology-list li + li {
+  margin-top: 8px;
+}
+
+.methodology-card code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+}
+
 /* Reglas de impresion limpia a PDF (window.print) */
 @media print {
   body {
@@ -577,7 +604,8 @@ tfoot td:last-child {
   .table-card,
   .unidentified-card,
   .panel-card,
-  .scenario-card {
+  .scenario-card,
+  .methodology-card {
     border: 1px solid #cbd5e1;
     break-inside: avoid;
     box-shadow: none;

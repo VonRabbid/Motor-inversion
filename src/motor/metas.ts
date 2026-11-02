@@ -10,7 +10,8 @@ import type {
   Acuerdos,
   CarteraSugeridaMeta,
   FondoAsignadoMeta,
-  Cliente
+  Cliente,
+  ProductoCatalogo
 } from '../types/domain';
 import { evaluarSerie } from './evaluadorSeries';
 
@@ -58,6 +59,43 @@ export interface CandidatoTramo {
   volatilidadPct: number;
 }
 
+// R01: depositos a plazo y efectivo no dependen de un acuerdo de AGF y siempre son proponibles
+export function esProductoSinAgf(producto: Pick<ProductoCatalogo, 'tipo'>): boolean {
+  return producto.tipo === 'time_deposit' || producto.tipo === 'cash';
+}
+
+interface SerieSeleccionada {
+  serie: string;
+  tacPct: number;
+}
+
+// R04: re-evalua todas las series del producto con el monto efectivo del fragmento
+function seleccionarSerieParaMonto(
+  cand: CandidatoTramo,
+  montoClp: number,
+  cliente: Cliente,
+  acuerdos: Acuerdos,
+  fechaCorte: string
+): SerieSeleccionada | null {
+  const producto = cand.producto as ProductoCatalogo;
+
+  if (esProductoSinAgf(producto)) {
+    return { serie: 'Única', tacPct: 0 };
+  }
+
+  const elegibles = (producto.series ?? [])
+    .map((serie) => evaluarSerie(producto, serie, montoClp, cliente, acuerdos, null, fechaCorte))
+    .filter((ev) => ev.estado === 'eligible')
+    .sort((a, b) => a.tac_pct - b.tac_pct);
+
+  if (elegibles.length === 0) return null;
+
+  return {
+    serie: elegibles[0].codigo,
+    tacPct: elegibles[0].tac_pct
+  };
+}
+
 // Obtiene todos los fondos elegibles para las categorias permitidas de un tramo
 export function obtenerCandidatosTramo(
   categoriasPermitidas: string[],
@@ -77,21 +115,36 @@ export function obtenerCandidatosTramo(
     const pesoCrec = catConfig?.peso_crecimiento ?? 0;
     const volPct = catConfig?.volatilidad_pct ?? 0;
 
-    const prods = catalogo.productos.filter((p) => {
-      if (p.categoria !== cat) return false;
-      const agf = p.administradora ?? p.emisor;
-      const ac = listaAcuerdos.find(
+    const prods = catalogo.productos.filter((p) => p.categoria === cat);
+
+    for (const prod of prods) {
+      // R01: la liquidez es la unica restriccion para productos sin AGF
+      if (prod.liquidez_dias > plazoMeses * 30) continue;
+
+      const agf = prod.administradora ?? prod.emisor;
+
+      if (esProductoSinAgf(prod)) {
+        candidatos.push({
+          producto: prod,
+          serie: 'Única',
+          tacPct: 0,
+          categoria: prod.categoria,
+          liquidezDias: prod.liquidez_dias,
+          agf,
+          pesoCrecimiento: pesoCrec,
+          volatilidadPct: volPct
+        });
+        continue;
+      }
+
+      const acuerdo = listaAcuerdos.find(
         (a: any) =>
           (a.emisor === agf || a.agf === agf) &&
           a.estado === 'active' &&
           (!a.vigente_desde || a.vigente_desde <= fechaCorte) &&
           (!a.vigente_hasta || a.vigente_hasta >= fechaCorte)
       );
-      return !!ac;
-    });
-
-    for (const prod of prods) {
-      if (prod.liquidez_dias > plazoMeses * 30) continue;
+      if (!acuerdo) continue;
 
       for (const serie of prod.series) {
         const ev = evaluarSerie(prod, serie, montoClp, cliente, acuerdos, null, fechaCorte);
@@ -102,7 +155,7 @@ export function obtenerCandidatosTramo(
             tacPct: ev.tac_pct,
             categoria: prod.categoria,
             liquidezDias: prod.liquidez_dias,
-            agf: prod.administradora ?? prod.emisor,
+            agf,
             pesoCrecimiento: pesoCrec,
             volatilidadPct: volPct
           });
@@ -268,7 +321,6 @@ export function construirCarteraMeta(
   const plan = calcularPlanMeta(meta, supuestos, fechaCorte);
   const valorUf = plan.valorUfClp;
   const capitalTotalUf = plan.capitalAsignadoUf;
-  const superavitUf = Math.max(0, plan.diferenciaUf);
 
   const limiteMaxFondoPct = supuestos?.limites?.max_por_fondo_pct ?? 40;
   const limiteMaxAgfPct = supuestos?.limites?.max_por_agf_pct ?? 60;
@@ -286,17 +338,90 @@ export function construirCarteraMeta(
   }
 
   const tramosActivos = plan.resumenTramos;
-  const idTramoMasLargo = tramosActivos[tramosActivos.length - 1]?.tramoId;
 
   const asignaciones: FondoAsignadoMeta[] = [];
   const alertas: string[] = [];
   const acumFondoUf: Record<string, number> = {};
   const acumAgfUf: Record<string, number> = {};
+  let crecimientoAcumuladoPct = 0;
 
-  for (const tramo of tramosActivos) {
-    const excedente = tramo.tramoId === idTramoMasLargo ? superavitUf : 0;
-    const asignacionTotalTramoUf = Number((tramo.totalVpUf + excedente).toFixed(2));
-    let faltanteTramoUf = asignacionTotalTramoUf;
+  // R06: si el plan no alcanza, el capital objetivo de cada tramo se escala al capital disponible
+  const factorObjetivo = !plan.alcanza && plan.totalVpUf > 0
+    ? capitalTotalUf / plan.totalVpUf
+    : 1;
+
+  const objetivosUf = tramosActivos.map((tramo) =>
+    Number((tramo.totalVpUf * factorObjetivo).toFixed(2))
+  );
+
+  if (objetivosUf.length > 0) {
+    const sumaObjetivos = objetivosUf.reduce((acc, monto) => acc + monto, 0);
+    const ajusteRedondeo = Number((capitalTotalUf - sumaObjetivos).toFixed(2));
+    objetivosUf[objetivosUf.length - 1] = Number(
+      (objetivosUf[objetivosUf.length - 1] + ajusteRedondeo).toFixed(2)
+    );
+  }
+
+  const categoriasRentaFija = Object.entries(supuestos.categorias ?? {})
+    .filter(([, config]) => (config.peso_crecimiento ?? 0) === 0)
+    .map(([categoria]) => categoria);
+
+  const capacidadCrecimientoUf = (pesoCrecimiento: number): number => {
+    if (pesoCrecimiento <= 0 || capitalTotalUf <= 0) return Number.POSITIVE_INFINITY;
+    const margenPct = Math.max(0, maxPermitido - crecimientoAcumuladoPct);
+    if (margenPct <= 0.0001) return 0;
+    return (margenPct / pesoCrecimiento) * capitalTotalUf / 100;
+  };
+
+  const capacidadDisponibleUf = (cand: CandidatoTramo): number => {
+    const asignadoFondoActual = acumFondoUf[cand.producto.id] ?? 0;
+    const asignadoAgfActual = acumAgfUf[cand.agf] ?? 0;
+    const capacidadFondo = Math.max(0, maxPorFondoUf - asignadoFondoActual);
+    const capacidadAgf = Math.max(0, maxPorAgfUf - asignadoAgfActual);
+    return Math.min(capacidadFondo, capacidadAgf, capacidadCrecimientoUf(cand.pesoCrecimiento));
+  };
+
+  const registrarAsignacion = (
+    tramo: ResumenTramoMeta,
+    cand: CandidatoTramo,
+    asignableUf: number,
+    seleccion: SerieSeleccionada
+  ): void => {
+    const asignableClp = Math.round(asignableUf * valorUf);
+    const pesoPct = capitalTotalUf > 0
+      ? Number(((asignableUf / capitalTotalUf) * 100).toFixed(2))
+      : 0;
+
+    asignaciones.push({
+      tramoId: tramo.tramoId,
+      tramoNombre: tramo.nombre,
+      idProducto: cand.producto.id,
+      nombreProducto: cand.producto.nombre,
+      agf: cand.agf,
+      serie: seleccion.serie,
+      tacPct: seleccion.tacPct,
+      categoria: cand.categoria,
+      liquidezDias: cand.liquidezDias,
+      capitalAsignadoUf: asignableUf,
+      capitalAsignadoClp: asignableClp,
+      pesoCarteraPct: pesoPct,
+      pesoCrecimiento: cand.pesoCrecimiento,
+      volatilidadPct: cand.volatilidadPct
+    });
+
+    acumFondoUf[cand.producto.id] = (acumFondoUf[cand.producto.id] ?? 0) + asignableUf;
+    acumAgfUf[cand.agf] = (acumAgfUf[cand.agf] ?? 0) + asignableUf;
+
+    if (cand.pesoCrecimiento > 0) {
+      crecimientoAcumuladoPct = Number(
+        (crecimientoAcumuladoPct + pesoPct * cand.pesoCrecimiento).toFixed(4)
+      );
+    }
+  };
+
+  for (let idx = 0; idx < tramosActivos.length; idx++) {
+    const tramo = tramosActivos[idx];
+    let faltanteTramoUf = Math.max(0, objetivosUf[idx] ?? 0);
 
     const tramoDef = supuestos.tramos.find((t) => t.id === tramo.tramoId);
     const plazoMeses = tramoDef?.desde_meses ?? 36;
@@ -304,7 +429,7 @@ export function construirCarteraMeta(
     // Obtener todos los candidatos del tramo
     const candidatos = obtenerCandidatosTramo(
       tramo.categoriasPermitidas,
-      Math.round(asignacionTotalTramoUf * valorUf),
+      Math.round(faltanteTramoUf * valorUf),
       catalogo,
       acuerdos,
       plazoMeses,
@@ -313,8 +438,9 @@ export function construirCarteraMeta(
       supuestos
     );
 
-    // En T4, si se requiere cumplir con un perfil restrictivo, priorizar balanceado (peso 0.5) sobre renta variable (peso 1)
-    if (tramo.tramoId === idTramoMasLargo && aplicaReduccion24Meses) {
+    // R06 Paso 6: con perfiles restrictivos se prefieren candidatos de menor peso de crecimiento
+    const priorizarMenorCrecimiento = maxPermitido < 50 || aplicaReduccion24Meses;
+    if (priorizarMenorCrecimiento) {
       candidatos.sort((a, b) => {
         if (a.pesoCrecimiento !== b.pesoCrecimiento) {
           return a.pesoCrecimiento - b.pesoCrecimiento;
@@ -325,84 +451,115 @@ export function construirCarteraMeta(
       candidatos.sort((a, b) => a.tacPct - b.tacPct);
     }
 
+    const productosUsados = new Set<string>();
+    const productosVistos = new Set<string>();
+
     for (const cand of candidatos) {
       if (faltanteTramoUf <= 0.005) break;
 
-      const asignadoFondoActual = acumFondoUf[cand.producto.id] ?? 0;
-      const asignadoAgfActual = acumAgfUf[cand.agf] ?? 0;
+      // Un unico fragmento por producto evita duplicar el mismo producto + serie
+      if (productosVistos.has(cand.producto.id)) continue;
+      productosVistos.add(cand.producto.id);
 
-      const capacidadFondo = Math.max(0, maxPorFondoUf - asignadoFondoActual);
-      const capacidadAgf = Math.max(0, maxPorAgfUf - asignadoAgfActual);
+      const capacidad = capacidadDisponibleUf(cand);
+      let asignableUf = Math.min(faltanteTramoUf, capacidad);
+      asignableUf = Number((Math.floor(asignableUf * 100) / 100).toFixed(2));
 
-      let asignableUf = Math.min(faltanteTramoUf, capacidadFondo, capacidadAgf);
-      asignableUf = Number(asignableUf.toFixed(2));
+      if (asignableUf <= 0.005) continue;
 
-      if (asignableUf > 0.005) {
-        acumFondoUf[cand.producto.id] = asignadoFondoActual + asignableUf;
-        acumAgfUf[cand.agf] = asignadoAgfActual + asignableUf;
-        faltanteTramoUf = Number((faltanteTramoUf - asignableUf).toFixed(2));
+      // R04: la serie se revalida con el monto real del fragmento, no con el total del tramo
+      const asignableClp = Math.round(asignableUf * valorUf);
+      const seleccion = seleccionarSerieParaMonto(cand, asignableClp, cliente, acuerdos, fechaCorte);
+      if (!seleccion) continue;
 
-        const asignableClp = Math.round(asignableUf * valorUf);
-        const pesoPct = capitalTotalUf > 0 ? Number(((asignableUf / capitalTotalUf) * 100).toFixed(2)) : 0;
+      registrarAsignacion(tramo, cand, asignableUf, seleccion);
+      faltanteTramoUf = Number((faltanteTramoUf - asignableUf).toFixed(2));
+      productosUsados.add(cand.producto.id);
+    }
 
-        asignaciones.push({
-          tramoId: tramo.tramoId,
-          tramoNombre: tramo.nombre,
-          idProducto: cand.producto.id,
-          nombreProducto: cand.producto.nombre,
-          agf: cand.agf,
-          serie: cand.serie,
-          tacPct: cand.tacPct,
-          categoria: cand.categoria,
-          liquidezDias: cand.liquidezDias,
-          capitalAsignadoUf: asignableUf,
-          capitalAsignadoClp: asignableClp,
-          pesoCarteraPct: pesoPct,
-          pesoCrecimiento: cand.pesoCrecimiento,
-          volatilidadPct: cand.volatilidadPct
-        });
+    // R06 Paso 6: si el cupo de crecimiento se agota, el remanente va a renta fija (peso 0)
+    if (faltanteTramoUf > 0.005) {
+      const cupoAgotado = maxPermitido - crecimientoAcumuladoPct <= 0.005;
+      const huboCandidatosCrecimiento = candidatos.some((cand) => cand.pesoCrecimiento > 0);
+
+      if (cupoAgotado || huboCandidatosCrecimiento) {
+        // R06: el reemplazo debe pertenecer a las categorias permitidas del tramo.
+        // No se puede usar una categoria de otro tramo solo por ser renta fija.
+        const categoriasRentaFijaTramo = categoriasRentaFija.filter((cat) =>
+          tramo.categoriasPermitidas.includes(cat)
+        );
+
+        if (categoriasRentaFijaTramo.length > 0) {
+          const candidatosRentaFija = obtenerCandidatosTramo(
+            categoriasRentaFijaTramo,
+            Math.round(faltanteTramoUf * valorUf),
+            catalogo,
+            acuerdos,
+            plazoMeses,
+            cliente,
+            fechaCorte,
+            supuestos
+          ).filter(
+            (cand) =>
+              cand.pesoCrecimiento === 0 && !productosUsados.has(cand.producto.id)
+          );
+
+          const fondosRentaFija = candidatosRentaFija.filter(
+            (cand) => !esProductoSinAgf(cand.producto)
+          );
+          const listaRentaFija = (fondosRentaFija.length > 0 ? fondosRentaFija : candidatosRentaFija)
+            .sort((a, b) => a.tacPct - b.tacPct);
+
+          const productosFallbackVistos = new Set<string>();
+          const fondosAsignadosFallback = new Set<string>();
+          let asignadoFallbackUf = 0;
+
+          for (const cand of listaRentaFija) {
+            if (faltanteTramoUf <= 0.005) break;
+            if (productosFallbackVistos.has(cand.producto.id)) continue;
+            productosFallbackVistos.add(cand.producto.id);
+
+            const capacidad = capacidadDisponibleUf(cand);
+            let asignableUf = Math.min(faltanteTramoUf, capacidad);
+            asignableUf = Number((Math.floor(asignableUf * 100) / 100).toFixed(2));
+
+            if (asignableUf <= 0.005) continue;
+
+            const asignableClp = Math.round(asignableUf * valorUf);
+            const seleccion = seleccionarSerieParaMonto(cand, asignableClp, cliente, acuerdos, fechaCorte);
+            if (!seleccion) continue;
+
+            registrarAsignacion(tramo, cand, asignableUf, seleccion);
+            faltanteTramoUf = Number((faltanteTramoUf - asignableUf).toFixed(2));
+            asignadoFallbackUf = Number((asignadoFallbackUf + asignableUf).toFixed(2));
+            fondosAsignadosFallback.add(cand.producto.nombre);
+          }
+
+          if (asignadoFallbackUf > 0) {
+            const nombresFondos = Array.from(fondosAsignadosFallback).join(', ');
+            if (cupoAgotado) {
+              alertas.push(
+                `Tramo ${tramo.tramoId}: el cupo de crecimiento del perfil ${perfilRiesgo} (${maxPermitido}%) se agotó; se asignaron ${asignadoFallbackUf} UF a renta fija (${nombresFondos}) para no exceder el perfil`
+              );
+            } else {
+              alertas.push(
+                `Tramo ${tramo.tramoId}: el remanente se asignó a renta fija (${nombresFondos}) respetando los límites de concentración`
+              );
+            }
+          }
+        }
       }
     }
 
-    // Si persiste remanente por limite estricto de cupos, asignar al candidato de menor TAC
-    if (faltanteTramoUf > 0.01 && candidatos.length > 0) {
-      const cand = candidatos[0];
-      const asignableUf = Number(faltanteTramoUf.toFixed(2));
-      acumFondoUf[cand.producto.id] = (acumFondoUf[cand.producto.id] ?? 0) + asignableUf;
-      acumAgfUf[cand.agf] = (acumAgfUf[cand.agf] ?? 0) + asignableUf;
-      faltanteTramoUf = 0;
-
-      const asignableClp = Math.round(asignableUf * valorUf);
-      const pesoPct = capitalTotalUf > 0 ? Number(((asignableUf / capitalTotalUf) * 100).toFixed(2)) : 0;
-
-      asignaciones.push({
-        tramoId: tramo.tramoId,
-        tramoNombre: tramo.nombre,
-        idProducto: cand.producto.id,
-        nombreProducto: cand.producto.nombre,
-        agf: cand.agf,
-        serie: cand.serie,
-        tacPct: cand.tacPct,
-        categoria: cand.categoria,
-        liquidezDias: cand.liquidezDias,
-        capitalAsignadoUf: asignableUf,
-        capitalAsignadoClp: asignableClp,
-        pesoCarteraPct: pesoPct,
-        pesoCrecimiento: cand.pesoCrecimiento,
-        volatilidadPct: cand.volatilidadPct
-      });
-    } else if (faltanteTramoUf > 0.01) {
-      alertas.push(`No se halló fondo elegible con acuerdo para el tramo ${tramo.tramoId}`);
+    if (faltanteTramoUf > 0.01) {
+      alertas.push(
+        `Tramo ${tramo.tramoId}: quedaron ${faltanteTramoUf.toFixed(2)} UF sin asignar; no se halló fondo elegible con acuerdo dentro de las categorías permitidas`
+      );
     }
   }
 
   // R06 Paso 6: calculo del peso de crecimiento de la cartera
-  const pesoCrecimientoTotal = asignaciones.reduce(
-    (acc, a) => acc + (a.pesoCarteraPct * a.pesoCrecimiento),
-    0
-  );
-  const pesoCrecimientoCarteraPct = Number(pesoCrecimientoTotal.toFixed(2));
-
+  const pesoCrecimientoCarteraPct = Number(crecimientoAcumuladoPct.toFixed(2));
   const cumplePerfilCrecimiento = pesoCrecimientoCarteraPct <= maxPermitido;
   if (!cumplePerfilCrecimiento) {
     alertas.push(
@@ -474,6 +631,32 @@ export function proyectarEscenariosMeta(
   const idTramoMasLargo = resultadoBase.resumenTramos[resultadoBase.resumenTramos.length - 1]?.tramoId;
   const superavitUf = Math.max(0, resultadoBase.diferenciaUf);
 
+  // R03/R06: la simulacion parte del capital efectivamente asignado por la cartera
+  // sugerida. En deficit no se puede simular el VP teorico completo como si estuviera financiado.
+  const factorCapitalBase = resultadoBase.totalVpUf > 0
+    ? Math.min(1, capitalAsignadoUf / resultadoBase.totalVpUf)
+    : 1;
+  const capitalAsignadoPorTramo: Record<string, number> = {};
+  if (carteraMeta) {
+    for (const a of carteraMeta.asignaciones) {
+      capitalAsignadoPorTramo[a.tramoId] = Number(
+        ((capitalAsignadoPorTramo[a.tramoId] ?? 0) + a.capitalAsignadoUf).toFixed(2)
+      );
+    }
+  }
+
+  // R03: TAC ponderada de los fondos asignados a cada tramo
+  const calcularTacTramoPct = (tramoId: string): number => {
+    if (!carteraMeta || carteraMeta.asignaciones.length === 0) return tacPonderada;
+    const asignacionesTramo = carteraMeta.asignaciones.filter((a) => a.tramoId === tramoId);
+    const capitalTramoUf = asignacionesTramo.reduce((acc, a) => acc + a.capitalAsignadoUf, 0);
+    if (capitalTramoUf <= 0) return tacPonderada;
+    return asignacionesTramo.reduce(
+      (acc, a) => acc + (a.capitalAsignadoUf * a.tacPct) / capitalTramoUf,
+      0
+    );
+  };
+
   for (const esc of listaEscenarios) {
     const ajuste = esc.ajuste_retorno_pp;
     let totalVpUf = 0;
@@ -484,7 +667,7 @@ export function proyectarEscenariosMeta(
       const cats = tramo.categorias_permitidas ?? tramo.categorias ?? [];
       const tasaBaseTramo = obtenerRetornoTramoPct(cats, supuestos);
 
-      const tasaAjustada = Math.max(0, tasaBaseTramo + ajuste);
+      const tasaAjustada = tasaBaseTramo + ajuste;
       const factorDescuento = Math.pow(1 + tasaAjustada / 100, anios);
       const montoUf = d.monto_uf ?? d.uf ?? 0;
       const vpUf = Number((montoUf / factorDescuento).toFixed(2));
@@ -506,14 +689,18 @@ export function proyectarEscenariosMeta(
     // Simulacion anual de saldos por tramos calzados (R03 y R06)
     const retornoRealNetoSupuestoPct = Number((retornoBrutoBase + ajuste - tacPonderada).toFixed(2));
 
-    // Estructura de saldo por tramo con su respectivo retorno real bruto + ajuste
+    // Estructura de saldo por tramo con su respectivo retorno real bruto + ajuste.
+    // Si existe cartera sugerida se usa su capital asignado; si no, se usa el VP
+    // escalado al capital disponible y el superavit se concentra en el tramo mas largo.
     const saldosTramos: Record<string, { saldoUf: number; tasaNetaPct: number }> = {};
     for (const tr of resultadoBase.resumenTramos) {
       const tasaBruta = obtenerRetornoTramoPct(tr.categoriasPermitidas, supuestos);
-      const tasaNeta = Math.max(0, tasaBruta + ajuste);
-      const excedente = tr.tramoId === idTramoMasLargo ? superavitUf : 0;
+      const tasaNeta = tasaBruta + ajuste - calcularTacTramoPct(tr.tramoId);
+      const saldoInicial = carteraMeta
+        ? (capitalAsignadoPorTramo[tr.tramoId] ?? 0)
+        : tr.totalVpUf * factorCapitalBase + (tr.tramoId === idTramoMasLargo ? superavitUf : 0);
       saldosTramos[tr.tramoId] = {
-        saldoUf: Number((tr.totalVpUf + excedente).toFixed(2)),
+        saldoUf: Number(saldoInicial.toFixed(2)),
         tasaNetaPct: tasaNeta
       };
     }

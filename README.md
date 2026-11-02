@@ -11,8 +11,8 @@ La capa de negocio está diseñada como un conjunto de funciones puras determini
 1. **`diagnostico.ts`**: Clasificación del patrimonio en total identificado y no identificado, validación de consistencia entre cuotas, valor cuota y monto declarado (tolerancia ±1 CLP) y cómputo de la TAC actual ponderada según la regla **R02**. Excluye activos no catalogados, seguros con ahorro y otros instrumentos fuera de alcance.
 2. **`evaluadorSeries.ts`**: Evaluación de elegibilidad de cada serie según la precedencia estricta de la regla **R04** (Reglas 0 a 6: convenios de distribución vigentes **R01**, series abiertas, plan APV, mandato de administración, ticket mínimo vs. patrimonio agregado y condiciones normativas).
 3. **`propuestaSeries.ts`**: Identificación de la serie más económica elegible dentro del mismo instrumento y cuantificación de ahorros anuales elegibles y condicionales (**R05**).
-4. **`propuestaFondos.ts`**: Sustitución de posiciones por alternativas de menor TAC en la misma categoría (**R07**), lectura de límites dinámicos de diversificación (máx. 40% por fondo y 60% por AGF), control activo de concentración y cómputo de volatilidad ponderada y retorno real neto estimado (**R03**).
-5. **`metas.ts`**: Calce temporal dinámico en intervalos semiabiertos `[desde_meses, hasta_meses)`, cálculo de Valor Presente (VP) con tasas reales por tramo (**R06**), construcción de cartera con reparto multi-fondo ante copamiento de límites, control del tope de crecimiento del perfil del inversionista y simulación anual del saldo y costos acumulados con saldo medio anual (**R03**).
+4. **`propuestaFondos.ts`**: Sustitución de posiciones por alternativas de menor TAC en la misma categoría y reasignación a categorías de menor o igual volatilidad cuando la AGF actual no tiene acuerdo o no existe una alternativa válida dentro de los límites (**R07**). Lee dinámicamente los límites de diversificación (máx. 40% por fondo y 60% por AGF), exige acuerdos vigentes para los fondos propuestos, incorpora efectivo y depósitos a plazo sin acuerdo de AGF y calcula volatilidad ponderada y retorno real neto estimado (**R03**).
+5. **`metas.ts`**: Calce temporal dinámico en intervalos semiabiertos `[desde_meses, hasta_meses)`, cálculo de Valor Presente (VP) con tasas reales por tramo (**R06**), construcción de cartera con reparto multi-fondo ante copamiento de límites y revalidación del ticket mínimo en cada fragmento (**R04**), control estricto del tope de crecimiento del perfil, escalamiento proporcional en déficit y simulación anual del saldo y costos acumulados con saldo medio anual y retorno neto de TAC (**R03**).
 6. **`index.ts`**: Fachada orquestadora del motor financiero, exportando las funciones principales `ejecutarNivel1` y `ejecutarNivel2`.
 
 ---
@@ -42,7 +42,7 @@ npm run dev
 ```
 
 ### 3. Ejecutar la suite de pruebas unitarias
-Corre la suite completa de 15 pruebas automatizadas (Nivel 1, Metas y Fondos Equivalentes):
+Corre la suite completa de 24 pruebas automatizadas (Nivel 1, Metas y Fondos Equivalentes):
 ```bash
 npm test
 ```

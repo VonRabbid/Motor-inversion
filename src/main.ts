@@ -146,6 +146,9 @@ function montarAplicacion(): void {
         actualizarVista();
       } catch {
         alert('Error al procesar el archivo. Verifique el formato JSON o CSV.');
+      } finally {
+        // Permite volver a seleccionar el mismo archivo tras editarlo durante la demostracion
+        if (inputCartola) inputCartola.value = '';
       }
     };
     reader.readAsText(file);
@@ -161,7 +164,7 @@ function actualizarVista(): void {
   if (pestañaActiva === 'series') {
     const diag = ejecutarNivel1(cartolaActiva, catalogo, acuerdos);
     // Pasa cartolaActiva y el distribuidor segun declaracion de universo R01
-    renderNivel1(contenedor, diag, cartolaActiva, acuerdos.distribuidor);
+    renderNivel1(contenedor, diag, cartolaActiva, acuerdos.distribuidor, catalogo);
   } else {
     const resN2 = ejecutarNivel2(meta, supuestos, cartolaActiva, catalogo, acuerdos);
     renderNivel2(contenedor, resN2, acuerdos.distribuidor);

@@ -1,4 +1,4 @@
-import type { Cartola, DiagnosticoCartola } from '../types/domain';
+import type { Cartola, Catalogo, DiagnosticoCartola } from '../types/domain';
 
 // Formateador de moneda en pesos chilenos
 function formatoCLP(monto: number): string {
@@ -61,10 +61,24 @@ export function renderNivel1(
   container: HTMLElement,
   diag: DiagnosticoCartola,
   cartola?: Cartola,
-  distribuidor = 'Distribuidor de ejemplo'
+  distribuidor = 'Distribuidor de ejemplo',
+  catalogo?: Catalogo
 ): void {
   const cliente = cartola?.cliente;
   const perfilVencido = cliente ? esPerfilVencido(cartola?.corte, cliente.perfil_evaluado_el) : false;
+  const idsIdentificados = new Set(diag.posiciones.map((pos) => pos.idProducto));
+  const posicionesExcluidas = (cartola?.posiciones ?? []).filter(
+    (pos) => pos.producto === null || !idsIdentificados.has(pos.producto)
+  );
+
+  const motivoExclusion = (productoId: string | null): string => {
+    if (productoId === null) return 'Posición sin identificar en catálogo';
+    const producto = catalogo?.productos.find((p) => p.id === productoId);
+    if (catalogo && !producto) return 'Producto no encontrado en catálogo';
+    if (producto?.tipo === 'insurance_savings') return 'Seguro con ahorro excluido de la TAC';
+    if (producto?.tipo === 'other') return 'Producto clasificado como "other" excluido de la TAC';
+    return 'Posición excluida del total identificado';
+  };
 
   const html = `
     <!-- Barra de informacion del cliente y vigencia de perfil -->
@@ -283,12 +297,28 @@ export function renderNivel1(
       </div>
     </section>
 
-    <!-- Tarjetas de posiciones no identificadas en catalogo -->
-    ${cartola?.posiciones?.filter(p => p.producto === null).map(pos => `
-      <div class="unidentified-card">
-        • <strong>Posición sin identificar en catálogo:</strong> "${pos.descripcion_original ?? 'Sin descripción'}" — ${formatoCLP(pos.monto_clp)} CLP (${formatoPct(diag.pct_no_identificado)} de la cartola total). No se incluye en el cálculo de la TAC ponderada.
-      </div>
-    `).join('') ?? ''}
+    <!-- Tarjetas de posiciones excluidas del total identificado -->
+    ${posicionesExcluidas.length > 0 ? `
+      <section class="unidentified-section">
+        <h2 class="section-title">Posiciones excluidas del total identificado</h2>
+        <div class="note-universe" style="margin-bottom: 12px;">
+          <strong>Total no identificado:</strong> ${formatoCLP(diag.total_no_identificado_clp)} CLP
+          (${formatoPct(diag.pct_no_identificado)} de la cartola total). Estas posiciones no se incluyen en el cálculo de la TAC ponderada.
+        </div>
+        ${posicionesExcluidas.map((pos) => {
+          const pctPosicion = diag.total_cartera_clp > 0
+            ? (pos.monto_clp / diag.total_cartera_clp) * 100
+            : 0;
+          const descripcion = pos.descripcion_original ?? pos.producto ?? 'Sin descripción';
+          return `
+            <div class="unidentified-card">
+              • <strong>${motivoExclusion(pos.producto)}:</strong> "${descripcion}" — ${formatoCLP(pos.monto_clp)} CLP
+              (${formatoPct(pctPosicion)} de la cartola total). No se incluye en el cálculo de la TAC ponderada.
+            </div>
+          `;
+        }).join('')}
+      </section>
+    ` : ''}
 
     <!-- Declaracion legal exacta del universo (R01) -->
     <footer class="legal-footer">

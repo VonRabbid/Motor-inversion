@@ -69,7 +69,7 @@ export function renderNivel2(
           <div style="font-size: 1.875rem; font-weight: 800; color: var(--success-color); line-height: 1.2;">
             ${formatoCLP(fondos.ahorroTotalAnualClp)} / año
           </div>
-          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Optimización por menor TAC dentro de la misma categoría</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Optimización por menor TAC y reasignación a categorías de menor o igual volatilidad</div>
         </div>
         <div class="metrics-2x2">
           <div class="metric-item">
@@ -140,6 +140,14 @@ export function renderNivel2(
             </tbody>
           </table>
         </div>
+        ${carteraMeta.alertas?.length > 0 ? `
+          <div class="alert-box-amber" style="margin-top: 12px;">
+            <strong>Alertas de construcción de cartera:</strong>
+            <ul>
+              ${carteraMeta.alertas.map((a: string) => `<li>${a}</li>`).join('')}
+            </ul>
+          </div>
+        ` : ''}
       </section>
     ` : ''}
 
@@ -212,8 +220,8 @@ export function renderNivel2(
       </table>
     </div>
 
-    <!-- Sustitución de Fondos R07 -->
-    <h2 class="section-title">Sustitución de Fondos por Menor TAC en la Misma Categoría (R07)</h2>
+    <!-- Sustitución y reasignación de fondos R07 -->
+    <h2 class="section-title">Sustitución y Reasignación de Fondos por Menor TAC (R07)</h2>
     <div class="table-wrapper">
       <table>
         <thead>
@@ -234,7 +242,11 @@ export function renderNivel2(
               <td><span class="badge badge-blocked">${s.categoria}</span></td>
               <td>${s.nombreProductoActual}</td>
               <td class="text-right">${formatoPct(s.tacActualPct)}</td>
-              <td><strong>${s.nombreProductoSugerido}</strong></td>
+              <td>
+                ${s.esMismoProducto && s.ahorroBps === 0
+                  ? '<strong>Mantener posición actual</strong>'
+                  : `<strong>${s.nombreProductoSugerido}</strong>`}
+              </td>
               <td><span class="badge badge-eligible">${s.serieSugerida}</span></td>
               <td class="text-right">${formatoPct(s.tacSugeridaPct)}</td>
               <td class="text-right">${s.ahorroBps > 0 ? `-${s.ahorroBps} bps` : '-'}</td>
@@ -244,6 +256,27 @@ export function renderNivel2(
         </tbody>
       </table>
     </div>
+
+    <!-- Declaraciones metodologicas obligatorias (R06 y R07) -->
+    <section class="methodology-card">
+      <h2 class="section-title" style="margin-top: 0;">Nota metodológica y supuestos (R06 / R07)</h2>
+      <ul class="methodology-list">
+        <li>
+          <strong>Método de descuento VP (R06):</strong> descuento anual compuesto.
+          La tasa <em>r_real</em> utilizada es el retorno real bruto promedio simple de las categorías
+          permitidas en cada tramo según <code>supuestos.json</code> (rotulado como <em>supuesto</em>,
+          no como historia observada).
+        </li>
+        <li>
+          <strong>Regla de cercanía de pago (R06 Paso 6):</strong> si faltan menos de 24 meses para el
+          primer desembolso, el tope máximo de crecimiento permitido para el perfil se reduce a la mitad (50%).
+        </li>
+        <li>
+          <strong>Método de medición de riesgo (R07):</strong> la volatilidad de la cartera se calcula
+          mediante la suma ponderada simple de las volatilidades supuestas por categoría sobre el total identificado.
+        </li>
+      </ul>
+    </section>
 
     <!-- Declaracion legal exacta del universo (R01) -->
     <footer class="legal-footer">
