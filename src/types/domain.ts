@@ -56,6 +56,7 @@ export interface SerieCatalogo {
 export interface ProductoCatalogo {
   id: string;
   emisor: string;
+  administradora?: string;
   nombre: string;
   tipo: TipoProducto;
   categoria: string;
@@ -73,6 +74,7 @@ export interface Catalogo {
 // Acuerdos de distribucion vigentes y comisiones
 export interface AcuerdoAGF {
   emisor: string;
+  agf?: string;
   estado: 'active' | 'inactive';
   vigente_desde: string;
   vigente_hasta: string | null;
@@ -84,6 +86,7 @@ export interface AcuerdoAGF {
 export interface Acuerdos {
   distribuidor: string;
   acuerdos: AcuerdoAGF[];
+  distribucion?: AcuerdoAGF[];
 }
 
 // Estructuras de salida para diagnostico y propuesta
@@ -241,4 +244,44 @@ export interface DetalleEscenarioMeta {
 export interface ProyeccionMetasEscenarios {
   resultadoBase: ResultadoCalculoMetas;
   escenarios: Record<string, DetalleEscenarioMeta>;
+}
+
+// --- Dominio Nivel 2: Fondos Equivalentes y Limites de Diversificacion (R07) ---
+
+export interface SustitucionFondo {
+  idProductoActual: string;
+  nombreProductoActual: string;
+  categoria: string;
+  montoClp: number;
+  serieActual: string | null;
+  tacActualPct: number;
+  idProductoSugerido: string;
+  nombreProductoSugerido: string;
+  serieSugerida: string;
+  tacSugeridaPct: number;
+  ahorroBps: number;
+  ahorroAnualClp: number;
+  agfSugerida: string;
+  esMismoProducto: boolean;
+}
+
+export interface MetricaConcentracion {
+  nombre: string;
+  montoClp: number;
+  participacionPct: number;
+  excedeLimite: boolean;
+  limiteMaxPct: number;
+}
+
+export interface ResultadoPropuestaFondos {
+  sustituciones: SustitucionFondo[];
+  totalIdentificadoClp: number;
+  costoActualAnualClp: number;
+  costoPropuestoAnualClp: number;
+  ahorroTotalAnualClp: number;
+  tacActualPonderadaPct: number;
+  tacPropuestaPonderadaPct: number;
+  concentracionPorFondo: Record<string, MetricaConcentracion>;
+  concentracionPorAgf: Record<string, MetricaConcentracion>;
+  alertasConcentracion: string[];
 }
