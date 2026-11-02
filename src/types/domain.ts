@@ -285,3 +285,10 @@ export interface ResultadoPropuestaFondos {
   concentracionPorAgf: Record<string, MetricaConcentracion>;
   alertasConcentracion: string[];
 }
+
+// Contrato de datos unificado para Nivel 2 (Metas + Fondos Equivalentes)
+export interface ResultadoNivel2 {
+  metas: ProyeccionMetasEscenarios;
+  fondos: ResultadoPropuestaFondos;
+}
+

@@ -575,7 +575,9 @@ tfoot td:last-child {
   .client-bar,
   .summary-card,
   .table-card,
-  .unidentified-card {
+  .unidentified-card,
+  .panel-card,
+  .scenario-card {
     border: 1px solid #cbd5e1;
     break-inside: avoid;
     box-shadow: none;
@@ -585,3 +587,176 @@ tfoot td:last-child {
     display: none !important;
   }
 }
+
+/* Encabezado principal y estructura de vistas */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.app-title h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.app-title p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.section-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-top: 24px;
+  margin-bottom: 16px;
+}
+
+.badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.badge-eligible {
+  background-color: var(--success-light);
+  color: var(--success-color);
+}
+
+.badge-blocked {
+  background-color: #fee2e2;
+  color: var(--danger-color);
+}
+
+.legal-footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Layout de paneles superiores estilo Nivel 1 */
+.dashboard-top-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(480px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.panel-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.panel-card-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 16px;
+}
+
+.metrics-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.metric-item .metric-label {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.metric-item .metric-val {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.metric-item .metric-sub {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.highlight-savings-box {
+  background-color: var(--success-light);
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.highlight-savings-box .big-amount {
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: #14532d;
+  margin: 4px 0;
+}
+
+/* Grilla de escenarios de retorno */
+.scenarios-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.scenario-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.scenario-card.ok {
+  border-top: 4px solid var(--success-color);
+}
+
+.scenario-card.danger {
+  border-top: 4px solid var(--danger-color);
+}
+
+/* Pestañas de navegacion limpias */
+.tabs-container {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 24px;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 10px 20px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--accent-color);
+}
+
+.tab-btn.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+}
+

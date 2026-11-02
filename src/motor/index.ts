@@ -1,10 +1,22 @@
-import type { Cartola, Catalogo, Acuerdos, DiagnosticoCartola } from '../types/domain';
+import type {
+  Cartola,
+  Catalogo,
+  Acuerdos,
+  DiagnosticoCartola,
+  MetaFinanciera,
+  Supuestos,
+  ResultadoNivel2
+} from '../types/domain';
 import { calcularDiagnostico } from './diagnostico';
 import { calcularPropuestaSeries } from './propuestaSeries';
+import { proyectarEscenariosMeta } from './metas';
+import { calcularPropuestaFondos } from './propuestaFondos';
 
 export * from './evaluadorSeries';
 export * from './diagnostico';
 export * from './propuestaSeries';
+export * from './metas';
+export * from './propuestaFondos';
 
 // Orquestador de diagnostico y propuestas de optimizacion de series (Nivel 1)
 export function ejecutarNivel1(
@@ -34,5 +46,22 @@ export function ejecutarNivel1(
     ahorro_condicional_adicional_clp: propuesta.ahorroCondicionalTotalClp,
     posiciones: propuesta.posicionesOptimizadas,
     alertas: diag.alertas
+  };
+}
+
+// Orquestador de calce de metas financieras y propuesta de fondos equivalentes (Nivel 2)
+export function ejecutarNivel2(
+  meta: MetaFinanciera,
+  supuestos: Supuestos,
+  cartola: Cartola,
+  catalogo: Catalogo,
+  acuerdos: Acuerdos
+): ResultadoNivel2 {
+  const metas = proyectarEscenariosMeta(meta, supuestos, cartola?.corte || '2026-09-30');
+  const fondos = calcularPropuestaFondos(cartola, catalogo, acuerdos);
+
+  return {
+    metas,
+    fondos
   };
 }
