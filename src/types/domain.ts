@@ -171,6 +171,7 @@ export interface CategoriaSupuesto {
   retorno_real_pct?: number;
   retorno_real_bruto_pct?: number;
   volatilidad_pct: number;
+  peso_crecimiento?: number;
 }
 
 export interface EscenarioSupuesto {
@@ -180,12 +181,19 @@ export interface EscenarioSupuesto {
   probabilidad_pct?: number;
 }
 
+export interface LimitesSupuestos {
+  max_por_fondo_pct: number;
+  max_por_agf_pct: number;
+}
+
 export interface Supuestos {
   valor_uf_clp?: number;
   uf?: { valor_clp: number; fecha?: string };
   tramos: TramoSupuesto[];
   categorias: Record<string, CategoriaSupuesto>;
   escenarios?: Record<string, EscenarioSupuesto> | EscenarioSupuesto[];
+  perfiles?: Record<string, { max_crecimiento_pct: number }>;
+  limites?: LimitesSupuestos;
 }
 
 export interface DesembolsoCalculado {
@@ -239,6 +247,12 @@ export interface DetalleEscenarioMeta {
   diferenciaClp: number;
   alcanza: boolean;
   estadoBalance: 'superavit' | 'deficit' | 'justo';
+  saldoFinalUf: number;
+  fechaAgotamiento: string | null;
+  porcentajeCoberturaPct: number;
+  retornoRealNetoSupuestoPct: number;
+  costoAcumuladoUf: number;
+  costoAcumuladoClp: number;
 }
 
 export interface ProyeccionMetasEscenarios {
@@ -281,18 +295,15 @@ export interface ResultadoPropuestaFondos {
   ahorroTotalAnualClp: number;
   tacActualPonderadaPct: number;
   tacPropuestaPonderadaPct: number;
-  volatilidadActualPonderadaPct?: number;
-  volatilidadPropuestaPonderadaPct?: number;
+  volatilidadActualPonderadaPct: number;
+  volatilidadPropuestaPonderadaPct: number;
+  retornoBrutoPonderadoActualPct: number;
+  retornoBrutoPonderadoPropuestoPct: number;
+  retornoRealNetoActualPct: number;
+  retornoRealNetoPropuestoPct: number;
   concentracionPorFondo: Record<string, MetricaConcentracion>;
   concentracionPorAgf: Record<string, MetricaConcentracion>;
   alertasConcentracion: string[];
-}
-
-// Contrato de datos unificado para Nivel 2 (Metas + Fondos Equivalentes)
-export interface ResultadoNivel2 {
-  metas: ProyeccionMetasEscenarios;
-  fondos: ResultadoPropuestaFondos;
-  carteraMeta?: CarteraSugeridaMeta;
 }
 
 // Cartera construida para financiar la meta financiera (R06 Pasos 3 a 6)
@@ -322,4 +333,11 @@ export interface CarteraSugeridaMeta {
   tacPonderadaMetaPct: number;
   volatilidadPonderadaMetaPct: number;
   alertas: string[];
+}
+
+// Contrato de datos unificado para Nivel 2 (Metas + Fondos Equivalentes)
+export interface ResultadoNivel2 {
+  metas: ProyeccionMetasEscenarios;
+  fondos: ResultadoPropuestaFondos;
+  carteraMeta?: CarteraSugeridaMeta;
 }

@@ -51,22 +51,23 @@ export function ejecutarNivel2(
   cartola: Cartola,
   catalogo: Catalogo,
   acuerdos: Acuerdos
-): ResultadoNivel2 & { carteraMeta?: any } {
+): ResultadoNivel2 {
   const fechaCorte = cartola?.corte || '2026-09-30';
-  const metas = proyectarEscenariosMeta(meta, supuestos, fechaCorte);
-  const fondos = calcularPropuestaFondos(cartola, catalogo, acuerdos, supuestos);
+  const cliente = cartola?.cliente;
   const carteraMeta = construirCarteraMeta(
     meta,
     supuestos,
     catalogo,
     acuerdos,
-    cartola?.cliente?.perfil_riesgo ?? 'moderado',
+    cliente ?? 'moderado',
     fechaCorte
   );
+  const metas = proyectarEscenariosMeta(meta, supuestos, fechaCorte, carteraMeta);
+  const fondos = calcularPropuestaFondos(cartola, catalogo, acuerdos, supuestos);
 
   return {
     metas,
     fondos,
     carteraMeta
-  } as any;
+  };
 }

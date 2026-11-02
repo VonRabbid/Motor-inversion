@@ -160,11 +160,11 @@ function actualizarVista(): void {
 
   if (pestañaActiva === 'series') {
     const diag = ejecutarNivel1(cartolaActiva, catalogo, acuerdos);
-    // Pasa cartolaActiva como tercer argumento para desplegar la barra de cliente y posicion no identificada
-    renderNivel1(contenedor, diag, cartolaActiva);
+    // Pasa cartolaActiva y el distribuidor segun declaracion de universo R01
+    renderNivel1(contenedor, diag, cartolaActiva, acuerdos.distribuidor);
   } else {
     const resN2 = ejecutarNivel2(meta, supuestos, cartolaActiva, catalogo, acuerdos);
-    renderNivel2(contenedor, resN2);
+    renderNivel2(contenedor, resN2, acuerdos.distribuidor);
   }
 }
 

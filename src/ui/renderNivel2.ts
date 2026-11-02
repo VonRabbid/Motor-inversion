@@ -16,7 +16,11 @@ function formatoPct(pct: number, decimales = 2): string {
   return `${pct.toFixed(decimales).replace('.', ',')}%`;
 }
 
-export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { carteraMeta?: any }): void {
+export function renderNivel2(
+  container: HTMLElement,
+  data: ResultadoNivel2 & { carteraMeta?: any },
+  distribuidor = 'Distribuidor de ejemplo'
+): void {
   const base = data.metas.resultadoBase;
   const esc = data.metas.escenarios;
   const fondos = data.fondos;
@@ -60,7 +64,7 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { c
       <!-- Panel 2: Propuesta con Fondos Equivalentes (R07) -->
       <div class="panel-card">
         <h2 class="panel-card-title">Propuesta con Fondos Equivalentes (R07)</h2>
-        <div style="margin-bottom: 20px;">
+        <div style="margin-bottom: 16px;">
           <div style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 2px;">Ahorro anual estimado</div>
           <div style="font-size: 1.875rem; font-weight: 800; color: var(--success-color); line-height: 1.2;">
             ${formatoCLP(fondos.ahorroTotalAnualClp)} / año
@@ -71,14 +75,29 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { c
           <div class="metric-item">
             <div class="metric-label">Nueva TAC Propuesta</div>
             <div class="metric-val" style="color: var(--success-color);">${formatoPct(fondos.tacPropuestaPonderadaPct, 4)}</div>
-            <div class="metric-sub">Cartera sugerida optimizada</div>
+            <div class="metric-sub">Baja desde ${formatoPct(fondos.tacActualPonderadaPct, 4)}</div>
           </div>
           <div class="metric-item">
-            <div class="metric-label">TAC Actual de Referencia</div>
-            <div class="metric-val">${formatoPct(fondos.tacActualPonderadaPct, 4)}</div>
-            <div class="metric-sub">Ponderada sobre identificados</div>
+            <div class="metric-label">Retorno Real Neto (supuesto)</div>
+            <div class="metric-val" style="color: var(--success-color);">${formatoPct(fondos.retornoRealNetoPropuestoPct)}</div>
+            <div class="metric-sub">Frente a ${formatoPct(fondos.retornoRealNetoActualPct)} actual</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Volatilidad Propuesta</div>
+            <div class="metric-val">${formatoPct(fondos.volatilidadPropuestaPonderadaPct)}</div>
+            <div class="metric-sub">Suma ponderada simple (riesgo mantenido)</div>
+          </div>
+          <div class="metric-item">
+            <div class="metric-label">Volatilidad Actual</div>
+            <div class="metric-val">${formatoPct(fondos.volatilidadActualPonderadaPct)}</div>
+            <div class="metric-sub">De referencia de la cartera</div>
           </div>
         </div>
+        ${fondos.alertasConcentracion?.length > 0 ? `
+          <div style="margin-top: 12px; font-size: 0.75rem; color: var(--danger-color); line-height: 1.4;">
+            ${fondos.alertasConcentracion.map((a: string) => `<div>⚠️ ${a}</div>`).join('')}
+          </div>
+        ` : ''}
       </div>
     </div>
 
@@ -137,8 +156,11 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { c
                 ${ok ? 'Cubierto' : 'Déficit'}
               </span>
             </div>
+            <div style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 4px;">
+              Ajuste: <strong>${item.ajustePp >= 0 ? '+' : ''}${item.ajustePp} pp</strong> | Cobertura: <strong>${formatoPct(item.porcentajeCoberturaPct ?? 100)}</strong>
+            </div>
             <div style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 6px;">
-              Ajuste supuesto: <strong>${item.ajustePp >= 0 ? '+' : ''}${item.ajustePp} pp</strong>
+              Retorno real neto (supuesto): <strong>${formatoPct(item.retornoRealNetoSupuestoPct)}</strong>
             </div>
             <div style="font-size: 1.25rem; font-weight: 700; margin: 4px 0;">
               VP: ${formatoUF(item.totalVpUf)}
@@ -147,7 +169,10 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { c
               Balance: ${item.diferenciaUf >= 0 ? '+' : ''}${formatoUF(item.diferenciaUf)}
             </div>
             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
-              Equivalente: ${formatoCLP(item.totalVpClp)}
+              Saldo final: ${item.fechaAgotamiento ? `<span style="color: var(--danger-color);">Agotado en ${item.fechaAgotamiento}</span>` : formatoUF(item.saldoFinalUf ?? 0)}
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">
+              Costo acum. (supuesto): ${formatoUF(item.costoAcumuladoUf ?? 0)} (${formatoCLP(item.costoAcumuladoClp ?? 0)})
             </div>
           </div>
         `;
@@ -165,7 +190,7 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { c
             <th class="text-right">Monto CLP</th>
             <th class="text-right">Plazo</th>
             <th>Tramo Horizonte</th>
-            <th class="text-right">Tasa Real</th>
+            <th class="text-right">Tasa Real (supuesto)</th>
             <th class="text-right">VP (UF)</th>
             <th class="text-right">VP (CLP)</th>
           </tr>
@@ -220,9 +245,9 @@ export function renderNivel2(container: HTMLElement, data: ResultadoNivel2 & { c
       </table>
     </div>
 
+    <!-- Declaracion legal exacta del universo (R01) -->
     <footer class="legal-footer">
-      <strong>Declaración de Universo y Límites de Inversión (R01 y R07):</strong>
-      Esta propuesta considera productos de las administradoras con las que el distribuidor mantiene acuerdos vigentes. Los horizontes se calzan en intervalos semiabiertos. Diversificación sujeta a límites de 40% por fondo y 60% por administradora. Todos los retornos futuros corresponden a supuestos declarados y no constituyen promesa de rentabilidad.
+      «Esta propuesta considera productos de las administradoras con las que ${distribuidor} mantiene acuerdos de distribución vigentes. Puede haber en el mercado alternativas de menor costo fuera de ese universo.»
     </footer>
   `;
 

@@ -58,18 +58,26 @@ describe('Nivel 2 — Calce de Plazos, VP y Construcción de Cartera (R06)', () 
     expect(resAlta.estadoBalance).toBe('superavit');
   });
 
-  it('Test 4: Construcción de cartera (Pasos 3 a 5) asigna superávit a T4 y descarta Gamma por falta de acuerdo', () => {
+  it('Test 4: Construcción de cartera (Pasos 3 a 5) respeta límites de 40% por fondo y 60% por AGF descartando Gamma', () => {
     const cartera = construirCarteraMeta(meta, supuestos, catalogo, acuerdos, 'moderado', '2026-09-30');
-    expect(cartera.asignaciones.length).toBe(3); // T2, T3 y T4
+    expect(cartera.asignaciones.length).toBeGreaterThanOrEqual(3);
 
-    // T3 descarta Gamma Deuda UF Largo Plazo (sin acuerdo) y elige Delta Deuda Corp B
-    const asigT3 = cartera.asignaciones.find((a) => a.tramoId === 'T3');
-    expect(asigT3?.agf).toBe('delta');
-    expect(asigT3?.serie).toBe('B');
+    // Ninguna posicion supera el 40% del capital total
+    for (const a of cartera.asignaciones) {
+      expect(a.pesoCarteraPct).toBeLessThanOrEqual(40.01);
+    }
 
-    // El tramo más largo (T4) absorbe el superávit de capital
-    const asigT4 = cartera.asignaciones.find((a) => a.tramoId === 'T4');
-    expect(asigT4?.capitalAsignadoUf).toBeGreaterThan(700);
+    // Ninguna AGF supera el 60% del capital total
+    const acumPorAgf: Record<string, number> = {};
+    for (const a of cartera.asignaciones) {
+      acumPorAgf[a.agf] = (acumPorAgf[a.agf] ?? 0) + a.pesoCarteraPct;
+    }
+    for (const [agf, pct] of Object.entries(acumPorAgf)) {
+      expect(pct).toBeLessThanOrEqual(60.01);
+    }
+
+    // Gamma descartado por no tener acuerdo
+    expect(cartera.asignaciones.some((a) => a.agf === 'gamma')).toBe(false);
   });
 
   it('Test 5: Validación de límite de crecimiento para perfil moderado (Paso 6 R06)', () => {
@@ -78,10 +86,31 @@ describe('Nivel 2 — Calce de Plazos, VP y Construcción de Cartera (R06)', () 
     expect(cartera.cumplePerfilCrecimiento).toBe(true);
   });
 
-  it('Test 6: Proyección de sensibilidad en escenarios Base, Adverso y Favorable', () => {
-    const proy = proyectarEscenariosMeta(meta, supuestos, '2026-09-30');
+  it('Test 6: Proyección de sensibilidad en escenarios y simulación anual de saldos y costos (R03 y R06)', () => {
+    const cartera = construirCarteraMeta(meta, supuestos, catalogo, acuerdos, 'moderado', '2026-09-30');
+    const proy = proyectarEscenariosMeta(meta, supuestos, '2026-09-30', cartera);
+
     expect(proy.escenarios['favorable'].totalVpUf).toBeLessThan(proy.escenarios['base'].totalVpUf);
     expect(proy.escenarios['base'].totalVpUf).toBeLessThan(proy.escenarios['adverso'].totalVpUf);
     expect(proy.escenarios['adverso'].alcanza).toBe(false);
+
+    // Metricas de simulacion anual R03
+    for (const esc of Object.values(proy.escenarios)) {
+      expect(esc.porcentajeCoberturaPct).toBeGreaterThan(0);
+      expect(esc.costoAcumuladoUf).toBeGreaterThan(0);
+      expect(esc.costoAcumuladoClp).toBeGreaterThan(0);
+      expect(esc.retornoRealNetoSupuestoPct).toBeDefined();
+    }
+
+    // En escenario adverso se agota antes de culminar
+    expect(proy.escenarios['adverso'].porcentajeCoberturaPct).toBeLessThan(100);
+    expect(proy.escenarios['adverso'].fechaAgotamiento).not.toBeNull();
+    expect(proy.escenarios['adverso'].saldoFinalUf).toBe(0);
+
+    // En escenario base y favorable cubre el 100%
+    expect(proy.escenarios['base'].porcentajeCoberturaPct).toBe(100);
+    expect(proy.escenarios['base'].fechaAgotamiento).toBeNull();
+    expect(proy.escenarios['base'].saldoFinalUf).toBeGreaterThan(0);
+    expect(proy.escenarios['favorable'].porcentajeCoberturaPct).toBe(100);
   });
 });

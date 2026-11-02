@@ -9,7 +9,8 @@ import type {
   Catalogo,
   Acuerdos,
   CarteraSugeridaMeta,
-  FondoAsignadoMeta
+  FondoAsignadoMeta,
+  Cliente
 } from '../types/domain';
 import { evaluarSerie } from './evaluadorSeries';
 
@@ -46,26 +47,36 @@ export function obtenerRetornoTramoPct(categoriasPermitidas: string[], supuestos
   return Number((suma / categoriasPermitidas.length).toFixed(4));
 }
 
-// R06 Paso 5: selecciona el fondo elegible mas economico del catalogo para las categorias del tramo
-export function seleccionarMejorFondoTramo(
+export interface CandidatoTramo {
+  producto: any;
+  serie: string;
+  tacPct: number;
+  categoria: string;
+  liquidezDias: number;
+  agf: string;
+  pesoCrecimiento: number;
+  volatilidadPct: number;
+}
+
+// Obtiene todos los fondos elegibles para las categorias permitidas de un tramo
+export function obtenerCandidatosTramo(
   categoriasPermitidas: string[],
   montoClp: number,
   catalogo: Catalogo,
   acuerdos: Acuerdos,
   plazoMeses: number,
-  fechaCorte: string
-) {
+  cliente: Cliente,
+  fechaCorte: string,
+  supuestos: Supuestos
+): CandidatoTramo[] {
   const listaAcuerdos = acuerdos.acuerdos ?? acuerdos.distribucion ?? [];
-  let mejor: {
-    producto: any;
-    serie: string;
-    tacPct: number;
-    categoria: string;
-    liquidezDias: number;
-    agf: string;
-  } | null = null;
+  const candidatos: CandidatoTramo[] = [];
 
   for (const cat of categoriasPermitidas) {
+    const catConfig = (supuestos.categorias as any)?.[cat];
+    const pesoCrec = catConfig?.peso_crecimiento ?? 0;
+    const volPct = catConfig?.volatilidad_pct ?? 0;
+
     const prods = catalogo.productos.filter((p) => {
       if (p.categoria !== cat) return false;
       const agf = p.administradora ?? p.emisor;
@@ -80,29 +91,62 @@ export function seleccionarMejorFondoTramo(
     });
 
     for (const prod of prods) {
-      // Validar liquidez respecto al horizonte del tramo
       if (prod.liquidez_dias > plazoMeses * 30) continue;
 
       for (const serie of prod.series) {
-        const clienteDummy = { referencia: 'CLIENTE', perfil_riesgo: 'moderado', perfil_evaluado_el: fechaCorte, plan_apv: false };
-        const ev = evaluarSerie(prod, serie, montoClp, clienteDummy, acuerdos, null, fechaCorte);
+        const ev = evaluarSerie(prod, serie, montoClp, cliente, acuerdos, null, fechaCorte);
         if (ev.estado === 'eligible') {
-          if (!mejor || ev.tac_pct < mejor.tacPct) {
-            mejor = {
-              producto: prod,
-              serie: ev.codigo,
-              tacPct: ev.tac_pct,
-              categoria: prod.categoria,
-              liquidezDias: prod.liquidez_dias,
-              agf: prod.administradora ?? prod.emisor
-            };
-          }
+          candidatos.push({
+            producto: prod,
+            serie: ev.codigo,
+            tacPct: ev.tac_pct,
+            categoria: prod.categoria,
+            liquidezDias: prod.liquidez_dias,
+            agf: prod.administradora ?? prod.emisor,
+            pesoCrecimiento: pesoCrec,
+            volatilidadPct: volPct
+          });
         }
       }
     }
   }
 
-  return mejor;
+  return candidatos;
+}
+
+// R06 Paso 5: selecciona el fondo elegible mas economico del catalogo para las categorias del tramo
+export function seleccionarMejorFondoTramo(
+  categoriasPermitidas: string[],
+  montoClp: number,
+  catalogo: Catalogo,
+  acuerdos: Acuerdos,
+  plazoMeses: number,
+  clienteOFecha: Cliente | string = '2026-09-30',
+  fechaCorte = '2026-09-30',
+  supuestosDummy?: Supuestos
+) {
+  const cliente: Cliente = typeof clienteOFecha === 'object'
+    ? clienteOFecha
+    : { referencia: 'CLIENTE', perfil_riesgo: 'moderado', perfil_evaluado_el: fechaCorte, plan_apv: false };
+  const fecha = typeof clienteOFecha === 'string' ? clienteOFecha : fechaCorte;
+  const sup: Supuestos = supuestosDummy ?? {
+    tramos: [],
+    categorias: {}
+  };
+
+  const candidatos = obtenerCandidatosTramo(
+    categoriasPermitidas,
+    montoClp,
+    catalogo,
+    acuerdos,
+    plazoMeses,
+    cliente,
+    fecha,
+    sup
+  );
+
+  candidatos.sort((a, b) => a.tacPct - b.tacPct);
+  return candidatos[0] ?? null;
 }
 
 // R06: calcula el calce de plazos, valor presente y suficiencia de capital para una meta
@@ -206,68 +250,148 @@ export function calcularPlanMeta(
   };
 }
 
-// R06 Pasos 3 a 6: construye la cartera para fondear la meta y valida el limite de crecimiento
+// R06 Pasos 3 a 6: construye la cartera para fondear la meta respetando limites por fondo (40%) y AGF (60%)
 export function construirCarteraMeta(
   meta: MetaFinanciera,
   supuestos: Supuestos,
   catalogo: Catalogo,
   acuerdos: Acuerdos,
-  perfilRiesgo = 'moderado',
+  clienteOPerfil: Cliente | string = 'moderado',
   fechaCorte = '2026-09-30'
 ): CarteraSugeridaMeta {
+  const cliente: Cliente = typeof clienteOPerfil === 'string'
+    ? { referencia: 'CLIENTE', perfil_riesgo: clienteOPerfil, perfil_evaluado_el: fechaCorte, plan_apv: false }
+    : clienteOPerfil;
+
+  const perfilRiesgo = cliente.perfil_riesgo ?? 'moderado';
+
   const plan = calcularPlanMeta(meta, supuestos, fechaCorte);
   const valorUf = plan.valorUfClp;
   const capitalTotalUf = plan.capitalAsignadoUf;
   const superavitUf = Math.max(0, plan.diferenciaUf);
+
+  const limiteMaxFondoPct = supuestos?.limites?.max_por_fondo_pct ?? 40;
+  const limiteMaxAgfPct = supuestos?.limites?.max_por_agf_pct ?? 60;
+  const maxPorFondoUf = Number(((capitalTotalUf * limiteMaxFondoPct) / 100).toFixed(2));
+  const maxPorAgfUf = Number(((capitalTotalUf * limiteMaxAgfPct) / 100).toFixed(2));
+
+  // Tope de crecimiento segun perfil y horizonte temporal
+  const perfilesConf = (supuestos as any).perfiles ?? { moderado: { max_crecimiento_pct: 50 } };
+  let maxPermitido = perfilesConf[perfilRiesgo]?.max_crecimiento_pct ?? 50;
+
+  const primerDesembolsoMeses = plan.desembolsos[0]?.mesesDesdeCorte ?? 60;
+  const aplicaReduccion24Meses = primerDesembolsoMeses < 24;
+  if (aplicaReduccion24Meses) {
+    maxPermitido = Number((maxPermitido * 0.5).toFixed(2));
+  }
 
   const tramosActivos = plan.resumenTramos;
   const idTramoMasLargo = tramosActivos[tramosActivos.length - 1]?.tramoId;
 
   const asignaciones: FondoAsignadoMeta[] = [];
   const alertas: string[] = [];
+  const acumFondoUf: Record<string, number> = {};
+  const acumAgfUf: Record<string, number> = {};
 
   for (const tramo of tramosActivos) {
-    // R06 Paso 4: si hay superavit, el excedente se asigna al tramo de mayor horizonte
     const excedente = tramo.tramoId === idTramoMasLargo ? superavitUf : 0;
-    const asignacionUf = Number((tramo.totalVpUf + excedente).toFixed(2));
-    const asignacionClp = Math.round(asignacionUf * valorUf);
-    const pesoPct = capitalTotalUf > 0 ? Number(((asignacionUf / capitalTotalUf) * 100).toFixed(2)) : 0;
+    const asignacionTotalTramoUf = Number((tramo.totalVpUf + excedente).toFixed(2));
+    let faltanteTramoUf = asignacionTotalTramoUf;
 
     const tramoDef = supuestos.tramos.find((t) => t.id === tramo.tramoId);
     const plazoMeses = tramoDef?.desde_meses ?? 36;
 
-    // R06 Paso 5: elegir fondo elegible mas economico de administradoras con convenio
-    const mejorFondo = seleccionarMejorFondoTramo(
+    // Obtener todos los candidatos del tramo
+    const candidatos = obtenerCandidatosTramo(
       tramo.categoriasPermitidas,
-      asignacionClp,
+      Math.round(asignacionTotalTramoUf * valorUf),
       catalogo,
       acuerdos,
       plazoMeses,
-      fechaCorte
+      cliente,
+      fechaCorte,
+      supuestos
     );
 
-    if (mejorFondo) {
-      const catConfig = (supuestos.categorias as any)?.[mejorFondo.categoria];
-      const pesoCrec = catConfig?.peso_crecimiento ?? 0;
-      const volPct = catConfig?.volatilidad_pct ?? 0;
+    // En T4, si se requiere cumplir con un perfil restrictivo, priorizar balanceado (peso 0.5) sobre renta variable (peso 1)
+    if (tramo.tramoId === idTramoMasLargo && aplicaReduccion24Meses) {
+      candidatos.sort((a, b) => {
+        if (a.pesoCrecimiento !== b.pesoCrecimiento) {
+          return a.pesoCrecimiento - b.pesoCrecimiento;
+        }
+        return a.tacPct - b.tacPct;
+      });
+    } else {
+      candidatos.sort((a, b) => a.tacPct - b.tacPct);
+    }
+
+    for (const cand of candidatos) {
+      if (faltanteTramoUf <= 0.005) break;
+
+      const asignadoFondoActual = acumFondoUf[cand.producto.id] ?? 0;
+      const asignadoAgfActual = acumAgfUf[cand.agf] ?? 0;
+
+      const capacidadFondo = Math.max(0, maxPorFondoUf - asignadoFondoActual);
+      const capacidadAgf = Math.max(0, maxPorAgfUf - asignadoAgfActual);
+
+      let asignableUf = Math.min(faltanteTramoUf, capacidadFondo, capacidadAgf);
+      asignableUf = Number(asignableUf.toFixed(2));
+
+      if (asignableUf > 0.005) {
+        acumFondoUf[cand.producto.id] = asignadoFondoActual + asignableUf;
+        acumAgfUf[cand.agf] = asignadoAgfActual + asignableUf;
+        faltanteTramoUf = Number((faltanteTramoUf - asignableUf).toFixed(2));
+
+        const asignableClp = Math.round(asignableUf * valorUf);
+        const pesoPct = capitalTotalUf > 0 ? Number(((asignableUf / capitalTotalUf) * 100).toFixed(2)) : 0;
+
+        asignaciones.push({
+          tramoId: tramo.tramoId,
+          tramoNombre: tramo.nombre,
+          idProducto: cand.producto.id,
+          nombreProducto: cand.producto.nombre,
+          agf: cand.agf,
+          serie: cand.serie,
+          tacPct: cand.tacPct,
+          categoria: cand.categoria,
+          liquidezDias: cand.liquidezDias,
+          capitalAsignadoUf: asignableUf,
+          capitalAsignadoClp: asignableClp,
+          pesoCarteraPct: pesoPct,
+          pesoCrecimiento: cand.pesoCrecimiento,
+          volatilidadPct: cand.volatilidadPct
+        });
+      }
+    }
+
+    // Si persiste remanente por limite estricto de cupos, asignar al candidato de menor TAC
+    if (faltanteTramoUf > 0.01 && candidatos.length > 0) {
+      const cand = candidatos[0];
+      const asignableUf = Number(faltanteTramoUf.toFixed(2));
+      acumFondoUf[cand.producto.id] = (acumFondoUf[cand.producto.id] ?? 0) + asignableUf;
+      acumAgfUf[cand.agf] = (acumAgfUf[cand.agf] ?? 0) + asignableUf;
+      faltanteTramoUf = 0;
+
+      const asignableClp = Math.round(asignableUf * valorUf);
+      const pesoPct = capitalTotalUf > 0 ? Number(((asignableUf / capitalTotalUf) * 100).toFixed(2)) : 0;
 
       asignaciones.push({
         tramoId: tramo.tramoId,
         tramoNombre: tramo.nombre,
-        idProducto: mejorFondo.producto.id,
-        nombreProducto: mejorFondo.producto.nombre,
-        agf: mejorFondo.agf,
-        serie: mejorFondo.serie,
-        tacPct: mejorFondo.tacPct,
-        categoria: mejorFondo.categoria,
-        liquidezDias: mejorFondo.liquidezDias,
-        capitalAsignadoUf: asignacionUf,
-        capitalAsignadoClp: asignacionClp,
+        idProducto: cand.producto.id,
+        nombreProducto: cand.producto.nombre,
+        agf: cand.agf,
+        serie: cand.serie,
+        tacPct: cand.tacPct,
+        categoria: cand.categoria,
+        liquidezDias: cand.liquidezDias,
+        capitalAsignadoUf: asignableUf,
+        capitalAsignadoClp: asignableClp,
         pesoCarteraPct: pesoPct,
-        pesoCrecimiento: pesoCrec,
-        volatilidadPct: volPct
+        pesoCrecimiento: cand.pesoCrecimiento,
+        volatilidadPct: cand.volatilidadPct
       });
-    } else {
+    } else if (faltanteTramoUf > 0.01) {
       alertas.push(`No se halló fondo elegible con acuerdo para el tramo ${tramo.tramoId}`);
     }
   }
@@ -278,17 +402,6 @@ export function construirCarteraMeta(
     0
   );
   const pesoCrecimientoCarteraPct = Number(pesoCrecimientoTotal.toFixed(2));
-
-  // Limite del perfil en supuestos.json
-  const perfilesConf = (supuestos as any).perfiles ?? { moderado: { max_crecimiento_pct: 50 } };
-  let maxPermitido = perfilesConf[perfilRiesgo]?.max_crecimiento_pct ?? 50;
-
-  // Si faltan menos de 24 meses para el primer desembolso, el tope se reduce a la mitad
-  const primerDesembolsoMeses = plan.desembolsos[0]?.mesesDesdeCorte ?? 60;
-  const aplicaReduccion24Meses = primerDesembolsoMeses < 24;
-  if (aplicaReduccion24Meses) {
-    maxPermitido = Number((maxPermitido * 0.5).toFixed(2));
-  }
 
   const cumplePerfilCrecimiento = pesoCrecimientoCarteraPct <= maxPermitido;
   if (!cumplePerfilCrecimiento) {
@@ -312,15 +425,29 @@ export function construirCarteraMeta(
   };
 }
 
-// Proyeccion de escenarios de retorno real
+// Proyeccion de escenarios de retorno real y simulacion anual del saldo segun R03
 export function proyectarEscenariosMeta(
   meta: MetaFinanciera,
   supuestos: Supuestos,
-  fechaCorte = '2026-09-30'
+  fechaCorte = '2026-09-30',
+  carteraMeta?: CarteraSugeridaMeta
 ): ProyeccionMetasEscenarios {
   const resultadoBase = calcularPlanMeta(meta, supuestos, fechaCorte);
   const valorUf = resultadoBase.valorUfClp;
   const capitalAsignadoUf = resultadoBase.capitalAsignadoUf;
+  const totalDesembolsosUf = resultadoBase.totalDesembolsosUf;
+
+  const tacPonderada = carteraMeta ? carteraMeta.tacPonderadaMetaPct : 1.0;
+  let retornoBrutoBase = 3.4;
+  if (carteraMeta && carteraMeta.asignaciones.length > 0) {
+    retornoBrutoBase = carteraMeta.asignaciones.reduce((acc, a) => {
+      const cat = (supuestos.categorias as any)?.[a.categoria];
+      const ret = cat?.retorno_real_bruto_pct ?? cat?.retorno_real_pct ?? 0;
+      return acc + (a.pesoCarteraPct * ret) / 100;
+    }, 0);
+  } else if (resultadoBase.desembolsos.length > 0) {
+    retornoBrutoBase = resultadoBase.desembolsos.reduce((acc, d) => acc + d.retornoRealAplicadoPct, 0) / resultadoBase.desembolsos.length;
+  }
 
   let listaEscenarios: Array<{ clave: string; nombre: string; ajuste_retorno_pp: number }> = [];
   if (Array.isArray(supuestos.escenarios)) {
@@ -344,6 +471,8 @@ export function proyectarEscenariosMeta(
   }
 
   const escenarios: Record<string, DetalleEscenarioMeta> = {};
+  const idTramoMasLargo = resultadoBase.resumenTramos[resultadoBase.resumenTramos.length - 1]?.tramoId;
+  const superavitUf = Math.max(0, resultadoBase.diferenciaUf);
 
   for (const esc of listaEscenarios) {
     const ajuste = esc.ajuste_retorno_pp;
@@ -374,6 +503,93 @@ export function proyectarEscenariosMeta(
       estadoBalance = 'deficit';
     }
 
+    // Simulacion anual de saldos por tramos calzados (R03 y R06)
+    const retornoRealNetoSupuestoPct = Number((retornoBrutoBase + ajuste - tacPonderada).toFixed(2));
+
+    // Estructura de saldo por tramo con su respectivo retorno real bruto + ajuste
+    const saldosTramos: Record<string, { saldoUf: number; tasaNetaPct: number }> = {};
+    for (const tr of resultadoBase.resumenTramos) {
+      const tasaBruta = obtenerRetornoTramoPct(tr.categoriasPermitidas, supuestos);
+      const tasaNeta = Math.max(0, tasaBruta + ajuste);
+      const excedente = tr.tramoId === idTramoMasLargo ? superavitUf : 0;
+      saldosTramos[tr.tramoId] = {
+        saldoUf: Number((tr.totalVpUf + excedente).toFixed(2)),
+        tasaNetaPct: tasaNeta
+      };
+    }
+
+    const fechaCorteDate = new Date(fechaCorte);
+    let costoAcumuladoUf = 0;
+    let ufPagadasConExito = 0;
+    let fechaAgotamiento: string | null = null;
+
+    for (let año = 1; año <= 12; año++) {
+      const inicioPeriodo = new Date(fechaCorteDate);
+      inicioPeriodo.setFullYear(inicioPeriodo.getFullYear() + (año - 1));
+
+      const finPeriodo = new Date(fechaCorteDate);
+      finPeriodo.setFullYear(finPeriodo.getFullYear() + año);
+
+      const saldoInicialPeriodo = Object.values(saldosTramos).reduce((acc, s) => acc + s.saldoUf, 0);
+
+      // Rendimiento anual en cada tramo
+      for (const s of Object.values(saldosTramos)) {
+        if (s.saldoUf > 0) {
+          s.saldoUf = s.saldoUf * (1 + s.tasaNetaPct / 100);
+        }
+      }
+
+      // Desembolsos programados en este año
+      const desembolsosDelAño = resultadoBase.desembolsos.filter((d) => {
+        const dDate = new Date(d.fecha);
+        return dDate >= inicioPeriodo && dDate < finPeriodo;
+      });
+
+      for (const d of desembolsosDelAño) {
+        const montoPagoUf = d.montoUf;
+        const sTramo = saldosTramos[d.tramoId];
+
+        if (sTramo && sTramo.saldoUf >= montoPagoUf) {
+          sTramo.saldoUf -= montoPagoUf;
+          ufPagadasConExito += montoPagoUf;
+        } else {
+          let remanente = montoPagoUf;
+          if (sTramo && sTramo.saldoUf > 0) {
+            ufPagadasConExito += sTramo.saldoUf;
+            remanente -= sTramo.saldoUf;
+            sTramo.saldoUf = 0;
+          }
+
+          // Cubrir remanente desde el tramo mas largo (superavit)
+          const sLargo = saldosTramos[idTramoMasLargo];
+          if (sLargo && sLargo.saldoUf >= remanente) {
+            sLargo.saldoUf -= remanente;
+            ufPagadasConExito += remanente;
+          } else if (sLargo && sLargo.saldoUf > 0) {
+            ufPagadasConExito += sLargo.saldoUf;
+            sLargo.saldoUf = 0;
+            if (fechaAgotamiento === null) fechaAgotamiento = d.fecha;
+          } else {
+            if (fechaAgotamiento === null) fechaAgotamiento = d.fecha;
+          }
+        }
+      }
+
+      const saldoFinalPeriodo = Object.values(saldosTramos).reduce((acc, s) => acc + s.saldoUf, 0);
+      const saldoMedio = (saldoInicialPeriodo + saldoFinalPeriodo) / 2;
+      costoAcumuladoUf += saldoMedio * (tacPonderada / 100);
+    }
+
+    const saldoFinalTotalUf = Number(
+      Object.values(saldosTramos).reduce((acc, s) => acc + s.saldoUf, 0).toFixed(2)
+    );
+    const porcentajeCoberturaPct = totalDesembolsosUf > 0
+      ? Number(((ufPagadasConExito / totalDesembolsosUf) * 100).toFixed(2))
+      : 0;
+
+    const costoFinalUf = Number(costoAcumuladoUf.toFixed(2));
+    const costoFinalClp = Math.round(costoFinalUf * valorUf);
+
     escenarios[esc.clave] = {
       clave: esc.clave,
       nombre: esc.nombre,
@@ -383,7 +599,13 @@ export function proyectarEscenariosMeta(
       diferenciaUf,
       diferenciaClp,
       alcanza: capitalAsignadoUf >= totalVpUf,
-      estadoBalance
+      estadoBalance,
+      saldoFinalUf: saldoFinalTotalUf,
+      fechaAgotamiento,
+      porcentajeCoberturaPct,
+      retornoRealNetoSupuestoPct,
+      costoAcumuladoUf: costoFinalUf,
+      costoAcumuladoClp: costoFinalClp
     };
   }
 

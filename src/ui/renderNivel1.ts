@@ -57,7 +57,12 @@ function formatoRegla(regla: number, estado: string): string {
 }
 
 // Renderiza la vista ejecutiva de diagnostico y propuesta de cambio de serie
-export function renderNivel1(container: HTMLElement, diag: DiagnosticoCartola, cartola?: Cartola): void {
+export function renderNivel1(
+  container: HTMLElement,
+  diag: DiagnosticoCartola,
+  cartola?: Cartola,
+  distribuidor = 'Distribuidor de ejemplo'
+): void {
   const cliente = cartola?.cliente;
   const perfilVencido = cliente ? esPerfilVencido(cartola?.corte, cliente.perfil_evaluado_el) : false;
 
@@ -285,10 +290,10 @@ export function renderNivel1(container: HTMLElement, diag: DiagnosticoCartola, c
       </div>
     `).join('') ?? ''}
 
-    <!-- Nota plana sobre el universo de distribucion -->
-    <p class="note-universe">
-      <strong>Nota sobre el universo usado:</strong> Se lee toda la cartola, pero solo se proponen series de administradoras con acuerdo de distribución vigente. El cálculo prepara la evidencia; la persona revisa y decide.
-    </p>
+    <!-- Declaracion legal exacta del universo (R01) -->
+    <footer class="legal-footer">
+      «Esta propuesta considera productos de las administradoras con las que ${distribuidor} mantiene acuerdos de distribución vigentes. Puede haber en el mercado alternativas de menor costo fuera de ese universo.»
+    </footer>
   `;
 
   container.innerHTML = html;
